@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Согласие на обработку ПД | BauSquad</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background-color: #0f1418;
+            color: #ecf0f1;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            padding: 20px 10px;
+            position: relative;
+            overflow-x: hidden;
+            min-height: 100vh;
+        }
+
+        .gears-bg {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            pointer-events: none;
+            z-index: 0;
+            overflow: hidden;
+            opacity: 0.15;
+        }
+        .gear {
+            position: absolute;
+            border: 10px solid #2ecc71;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .gear-1 {
+            width: 550px; height: 550px;
+            top: 10px; left: 10px;
+            animation: spin 45s linear infinite;
+        }
+        .gear-2 {
+            width: 650px; height: 650px;
+            bottom: 10px; right: 10px;
+            border-color: #c5a059;
+            animation: spin-reverse 60s linear infinite;
+        }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+        @keyframes spin-reverse { 100% { transform: rotate(-360deg); } }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            position: relative;
+            z-index: 10;
+        }
+
+        .nav-bar {
+            background-color: #1a252f;
+            border-bottom: 3px solid #2ecc71;
+            padding: 15px 20px;
+            margin-bottom: 25px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 15px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        }
+        .nav-title {
+            font-size: 13px;
+            font-weight: 800;
+            text-transform: uppercase;
+            color: #2ecc71;
+            letter-spacing: 1px;
+        }
+        .nav-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .nav-btn {
+            display: inline-block;
+            padding: 8px 14px;
+            font-size: 11px;
+            font-weight: 800;
+            text-transform: uppercase;
+            text-decoration: none;
+            color: #bdc3c7;
+            background-color: #0f1418;
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: all 0.2s ease;
+        }
+        .nav-btn:hover, .nav-btn.active {
+            background-color: #2ecc71;
+            color: #000;
+            border-color: #2ecc71;
+        }
+        .nav-btn.home { background-color: #2b3d4f; color: #fff; }
+
+        .doc-card {
+            background-color: #1a252f;
+            border-top: 4px solid #2ecc71;
+            padding: 35px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.6);
+            margin-bottom: 40px;
+        }
+        .doc-header {
+            border-bottom: 1px solid #2b3d4f;
+            padding-bottom: 20px;
+            margin-bottom: 25px;
+        }
+        .doc-header h1 {
+            font-size: 22px;
+            font-weight: 900;
+            text-transform: uppercase;
+            color: #ffffff;
+            margin-top: 10px;
+        }
+        .section-title {
+            font-size: 14px;
+            font-weight: 800;
+            text-transform: uppercase;
+            color: #2ecc71;
+            margin: 25px 0 12px 0;
+        }
+        #toTop {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            background-color: #2ecc71;
+            color: #000;
+            border: none;
+            padding: 12px 18px;
+            font-size: 14px;
+            font-weight: 900;
+            text-transform: uppercase;
+            cursor: pointer;
+            display: none;
+            z-index: 100;
+        }
+        #toTop.show { display: block; }
+    </style>
+</head>
+<body>
+    <div class="gears-bg">
+        <div class="gear gear-1"></div>
+        <div class="gear gear-2"></div>
+    </div>
+
+    <div class="container">
+        <div class="nav-bar">
+            <div class="nav-title">⚙️ BauSquad Документы</div>
+            <div class="nav-links">
+                <a href="/terms" class="nav-btn">Пользовательское соглашение</a>
+                <a href="/privacy" class="nav-btn">Политика конфиденциальности</a>
+                <a href="/consent" class="nav-btn active">Согласие на обработку ПД</a>
+                <a href="/" class="nav-btn home">← На главную</a>
+            </div>
+        </div>
+
+        <div class="doc-card">
+            <div class="doc-header">
+                <p style="font-size: 11px; color: #2ecc71; text-transform: uppercase; font-weight: 800;">Согласие на обработку данных</p>
+                <h1>Согласие на обработку персональных данных</h1>
+                <p style="font-size: 12px; color: #bdc3c7; margin-top: 5px;">ИП СЕМЁНОВ АНДРЕЙ СЕРГЕЕВИЧ. Обновлено: 01.08.2026</p>
+            </div>
+
+            <div style="font-size: 12px; color: #bdc3c7;">
+                <p>Выражаю свое бессрочное согласие Оператору — ИП СЕМЁНОВ АНДРЕЙ СЕРГЕЕВИЧ (ОГРНИП: 326774600536097, ИНН: 773395090916), на обработку моих персональных данных в соответствии с условиями сервиса BauSquad.</p>
+                
+                <div class="section-title">1. Права пользователя</div>
+                <p>Согласие может быть отозвано в любой момент путем направления запроса на почту support@bausquad.org.</p>
+            </div>
+        </div>
+    </div>
+
+    <button id="toTop">↑ Наверх</button>
+    <script>
+        const btn = document.getElementById("toTop");
+        window.addEventListener("scroll", () => {
+            if (window.scrollY > 300) btn.classList.add("show");
+            else btn.classList.remove("show");
+        });
+        btn.onclick = () => window.scrollTo({ top: 0, behavior: "smooth" });
+    </script>
+</body>
+</html>

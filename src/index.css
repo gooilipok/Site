@@ -1,0 +1,282 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    /* BauSquad Metal Dark Engineering Palette */
+    --steel-blue: #2b3d4f;
+    --steel-blue-light: #3d536b;
+    --pencil-gold: #c5a059;
+    --pencil-gold-bright: #e5be75;
+    --admin-orange: #ff6b00;
+    --industrial-yellow: #f1c40f;
+    --industrial-yellow-hover: #f4d03f;
+    --industrial-yellow-dark: #b7950b;
+    
+    /* Metal Dark theme background levels */
+    --bg-deep: #0f1418;
+    --bg-mid: #1a252f;
+    --bg-bottom: #2c343a;
+    --card-bg: rgba(26, 37, 47, 0.85);
+    
+    --text-main: #ecf0f1;
+    --text-muted: #bdc3c7;
+    --text-dim: #7f8c8d;
+    
+    --danger: #e74c3c;
+    --submit-red: #a83232;
+    --submit-red-hover: #c0392b;
+    --success: #2ecc71;
+    --warning: #e67e22;
+    
+    --gray-btn: #454d55;
+    --gray-btn-hover: #5a636c;
+  }
+
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+    margin: 0;
+    padding: 0;
+    background: 
+      radial-gradient(circle at 15% 20%, rgba(52, 152, 219, 0.08) 0%, transparent 40%),
+      radial-gradient(circle at 85% 75%, rgba(197, 160, 89, 0.09) 0%, transparent 45%),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+      linear-gradient(0deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+      linear-gradient(180deg, var(--bg-deep) 0%, var(--bg-mid) 40%, var(--bg-bottom) 100%);
+    background-size: 100% 100%, 100% 100%, 40px 40px, 40px 40px, 100% 100%;
+    background-attachment: fixed;
+    color: var(--text-main);
+    overflow-x: hidden;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #0f1418;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #2b3d4f;
+    border: 1px solid rgba(197, 160, 89, 0.3);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #c5a059;
+  }
+}
+
+/* Background Animated Rotating Gears */
+.bg-animation {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+  opacity: 0.12;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.gear {
+  position: absolute;
+  border: 15px solid #454d55;
+  border-radius: 50%;
+  animation: rotateGear 30s linear infinite;
+}
+
+.gear::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 110%;
+  height: 110%;
+  border: 15px dotted #454d55;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.gear-1 {
+  width: 380px;
+  height: 380px;
+  top: -120px;
+  left: -120px;
+}
+
+.gear-2 {
+  width: 240px;
+  height: 240px;
+  bottom: 8%;
+  right: -60px;
+  animation-direction: reverse;
+  animation-duration: 22s;
+}
+
+.gear-3 {
+  width: 160px;
+  height: 160px;
+  top: 40%;
+  right: 15%;
+  animation-duration: 18s;
+}
+
+@keyframes rotateGear {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes slide {
+  0% { background-position: 0 0; }
+  100% { background-position: 60px 60px; }
+}
+
+@keyframes modalFadeUp {
+  from { opacity: 0; transform: translateY(30px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Machine Industrial Button ("СОЗДАТЬ ЗАКАЗ") */
+.machine-btn-container {
+  margin-top: 40px;
+  display: flex;
+  justify-content: center;
+}
+
+.machine-btn {
+  position: relative;
+  background: #111;
+  border: 4px solid #333;
+  border-radius: 12px;
+  padding: 10px;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.15s ease;
+  box-shadow: 0 8px 0 #000, 0 15px 25px rgba(0, 0, 0, 0.6);
+  text-decoration: none;
+}
+
+.btn-cap {
+  display: block;
+  background: var(--industrial-yellow);
+  color: #000;
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: 1.5px;
+  padding: 18px 50px;
+  border-radius: 6px;
+  border: 2px solid rgba(0, 0, 0, 0.15);
+  box-shadow: inset 0 4px 0 rgba(255, 255, 255, 0.5), 0 8px 0 #b7950b;
+  transition: all 0.1s ease;
+  text-transform: uppercase;
+  text-align: center;
+  user-select: none;
+}
+
+.machine-btn:hover .btn-cap {
+  background: #f4d03f;
+  box-shadow: inset 0 4px 0 rgba(255, 255, 255, 0.6), 0 8px 0 #b7950b;
+}
+
+.machine-btn:active {
+  transform: translateY(4px);
+  box-shadow: 0 4px 0 #000, 0 8px 12px rgba(0, 0, 0, 0.5);
+}
+
+.machine-btn:active .btn-cap {
+  transform: translateY(4px);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.2), 0 2px 0 #b7950b;
+  background: #d4ac0d;
+}
+
+/* Custom Metal Card Styling */
+.metal-card {
+  background: rgba(26, 37, 47, 0.9);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 4px solid var(--steel-blue);
+  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.3);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.metal-card:hover {
+  transform: translateY(-4px);
+  border-top-color: var(--pencil-gold);
+  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.4), 0 15px 35px rgba(0, 0, 0, 0.5);
+}
+
+/* User Badge / Metal Nick Token */
+.user-nick-token {
+  font-weight: 700;
+  cursor: pointer;
+  color: var(--pencil-gold);
+  padding: 8px 18px;
+  border: 1px solid rgba(197, 160, 89, 0.4);
+  background: linear-gradient(145deg, #1e2730, #131a21);
+  box-shadow: 3px 3px 6px #0d1217;
+  transition: all 0.3s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.user-nick-token:hover {
+  color: #ffffff;
+  border-color: var(--pencil-gold);
+  box-shadow: 0 0 12px rgba(197, 160, 89, 0.4);
+}
+
+/* Status Badges */
+.badge-status {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.badge-new {
+  background: rgba(241, 196, 15, 0.15);
+  color: #f1c40f;
+  border: 1px solid rgba(241, 196, 15, 0.4);
+}
+
+.badge-in_progress {
+  background: rgba(52, 152, 219, 0.15);
+  color: #3498db;
+  border: 1px solid rgba(52, 152, 219, 0.4);
+}
+
+.badge-revision {
+  background: rgba(230, 126, 34, 0.15);
+  color: #e67e22;
+  border: 1px solid rgba(230, 126, 34, 0.4);
+}
+
+.badge-completed {
+  background: rgba(46, 204, 113, 0.15);
+  color: #2ecc71;
+  border: 1px solid rgba(46, 204, 113, 0.4);
+}
+
+.badge-cancelled {
+  background: rgba(231, 76, 60, 0.15);
+  color: #e74c3c;
+  border: 1px solid rgba(231, 76, 60, 0.4);
+}
+
+.badge-admin {
+  background: rgba(255, 107, 0, 0.15);
+  color: #ff6b00;
+  border: 1px solid rgba(255, 107, 0, 0.4);
+}
+
+.badge-customer {
+  background: rgba(197, 160, 89, 0.15);
+  color: #c5a059;
+  border: 1px solid rgba(197, 160, 89, 0.4);
+}

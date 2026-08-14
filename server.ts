@@ -3,6 +3,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
+import mysql from 'mysql2/promise';
+import bcrypt from 'bcryptjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,6 +15,17 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// Global CORS Middleware
+app.use((req: Request, res: Response, next: NextFunction) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 // Setup file uploads directory
 const uploadsDir = path.join(process.cwd(), 'uploads');
 if (!fs.existsSync(uploadsDir)) {
@@ -20,7 +33,31 @@ if (!fs.existsSync(uploadsDir)) {
 }
 app.use('/uploads', express.static(uploadsDir));
 
-// In-Memory Database (simulating MySQL ORM for live interactive preview)
+// Initialize MySQL Database Pool if credentials provided
+let dbPool: mysql.Pool | null = null;
+if (process.env.MYSQL_HOST || process.env.DATABASE_URL) {
+  try {
+    if (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('mysql')) {
+      dbPool = mysql.createPool(process.env.DATABASE_URL);
+    } else {
+      dbPool = mysql.createPool({
+        host: process.env.MYSQL_HOST || 'localhost',
+        port: parseInt(process.env.MYSQL_PORT || '3306', 10),
+        user: process.env.MYSQL_USER,
+        password: process.env.MYSQL_PASSWORD,
+        database: process.env.MYSQL_DATABASE,
+        waitForConnections: true,
+        connectionLimit: 10,
+        queueLimit: 0
+      });
+    }
+    console.log('[MySQL] Connection pool initialized');
+  } catch (err) {
+    console.error('[MySQL] Pool initialization failed:', err);
+  }
+}
+
+// Data models
 interface DBUser {
   id: string;
   email: string;
@@ -30,6 +67,8 @@ interface DBUser {
   account_status: 'active' | 'banned' | 'deleted';
   is_verified: boolean;
   created_at: string;
+  telegram_handle?: string;
+  tg_id?: string;
   agreements: {
     terms_accepted: boolean;
     terms_accepted_at: string;
@@ -64,6 +103,13 @@ interface DBOrder {
   user_id: string;
   user_email: string;
   user_username: string;
+  is_guest?: boolean;
+  guest_agreements?: {
+    terms_accepted: boolean;
+    privacy_accepted: boolean;
+    consent_accepted: boolean;
+    agreements_accepted_at: string;
+  };
   files: DBOrderFile[];
 }
 
@@ -163,6 +209,45 @@ const orders: DBOrder[] = [
 const verificationCodes: Map<string, DBVerificationCode> = new Map();
 const telegramLogs: Array<{ id: string; timestamp: string; text: string; files: string[] }> = [];
 
+// Live Telegram Notification Dispatcher via Bot API
+async function sendTelegramNotification(text: string, files: string[] = []) {
+  const logEntry = {
+    id: `tg-${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    text,
+    files
+  };
+  telegramLogs.unshift(logEntry);
+  if (telegramLogs.length > 50) telegramLogs.pop();
+
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_ADMIN_CHAT_ID || process.env.TELEGRAM_CHAT_ID;
+
+  if (token && chatId) {
+    try {
+      const resp = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text,
+          parse_mode: 'HTML'
+        })
+      });
+      const data = await resp.json();
+      if (!data.ok) {
+        console.error('[Telegram Bot API Error]', data);
+      } else {
+        console.log('[Telegram Bot API] Notification sent to chat:', chatId);
+      }
+    } catch (err) {
+      console.error('[Telegram Network Error]', err);
+    }
+  } else {
+    console.log('[Telegram Bot API] (Local log):', text);
+  }
+}
+
 // JWT helper
 function generateToken(userId: string, role: string, type: 'access' | 'refresh') {
   const secret = process.env.SECRET_KEY || 'bau_squad_secret_key';
@@ -221,6 +306,8 @@ function sanitizeUser(u: DBUser) {
     account_status: u.account_status || 'active',
     is_verified: u.is_verified,
     created_at: u.created_at,
+    telegram_handle: u.telegram_handle || '',
+    tg_id: u.tg_id || '',
     agreements: u.agreements,
     order_count
   };
@@ -229,145 +316,264 @@ function sanitizeUser(u: DBUser) {
 // REST API ROUTES
 
 // 1. AUTH: Register Step 1 (Send Email Verification Code)
-app.post('/api/auth/register', (req: Request, res: Response) => {
-  const { email, username, password, terms_accepted, privacy_accepted, consent_accepted } = req.body;
+app.post(['/api/auth/register', '/api/register', '/api/auth/register/'], async (req: Request, res: Response) => {
+  try {
+    const { email, username, password, terms_accepted, privacy_accepted, consent_accepted } = req.body;
 
-  if (!email || !username || !password) {
-    return res.status(400).json({ error: 'Заполните все обязательные поля' });
-  }
-
-  if (!terms_accepted || !privacy_accepted || !consent_accepted) {
-    return res.status(400).json({
-      error: 'Для регистрации необходимо отдельно подтвердить все 3 соглашения'
-    });
-  }
-
-  const existingEmail = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-  if (existingEmail) {
-    return res.status(400).json({ error: 'Пользователь с таким Email уже зарегистрирован' });
-  }
-
-  const existingUsername = users.find(u => u.username.toLowerCase() === username.toLowerCase());
-  if (existingUsername) {
-    return res.status(400).json({ error: 'Пользователь с таким Логином уже существует' });
-  }
-
-  // Generate 6-digit code
-  const code = Math.floor(100000 + Math.random() * 900000).toString();
-  const now = new Date().toISOString();
-
-  verificationCodes.set(email.toLowerCase(), {
-    email: email.toLowerCase(),
-    code,
-    expires_at: Date.now() + 15 * 60 * 1000, // 15 mins
-    payload: {
-      email,
-      username,
-      passwordHash: password, // In production, hashed with bcrypt
-      terms_accepted,
-      terms_accepted_at: now,
-      privacy_accepted,
-      privacy_accepted_at: now,
-      consent_accepted,
-      consent_accepted_at: now
+    if (!email || !username || !password) {
+      return res.status(400).json({ error: 'Заполните все обязательные поля' });
     }
-  });
 
-  console.log(`[SMTP Mailer] Verification code sent to ${email}: ${code}`);
+    if (!terms_accepted || !privacy_accepted || !consent_accepted) {
+      return res.status(400).json({
+        error: 'Для регистрации необходимо отдельно подтвердить все 3 соглашения'
+      });
+    }
 
-  return res.json({
-    message: 'Код подтверждения успешно отправлен на вашу почту',
-    demo_code: code, // Shared for convenience in preview mode
-    email
-  });
+    const lowerEmail = String(email).toLowerCase().trim();
+    const lowerUsername = String(username).trim();
+
+    // Check in MySQL if dbPool is initialized
+    if (dbPool) {
+      try {
+        const [rows]: any = await dbPool.execute(
+          'SELECT id FROM users WHERE LOWER(email) = ? OR LOWER(login) = ?',
+          [lowerEmail, lowerUsername.toLowerCase()]
+        );
+        if (Array.isArray(rows) && rows.length > 0) {
+          return res.status(400).json({ error: 'Пользователь с таким Email или Логином уже существует' });
+        }
+      } catch (dbErr) {
+        console.error('[MySQL Register Check Error]', dbErr);
+      }
+    }
+
+    const existingEmail = users.find(u => u.email.toLowerCase() === lowerEmail);
+    if (existingEmail) {
+      return res.status(400).json({ error: 'Пользователь с таким Email уже зарегистрирован' });
+    }
+
+    const existingUsername = users.find(u => u.username.toLowerCase() === lowerUsername.toLowerCase());
+    if (existingUsername) {
+      return res.status(400).json({ error: 'Пользователь с таким Логином уже существует' });
+    }
+
+    // Generate 6-digit code
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const now = new Date().toISOString();
+
+    verificationCodes.set(lowerEmail, {
+      email: lowerEmail,
+      code,
+      expires_at: Date.now() + 15 * 60 * 1000, // 15 mins
+      payload: {
+        email: lowerEmail,
+        username: lowerUsername,
+        passwordHash: password,
+        terms_accepted,
+        terms_accepted_at: now,
+        privacy_accepted,
+        privacy_accepted_at: now,
+        consent_accepted,
+        consent_accepted_at: now
+      }
+    });
+
+    console.log(`[SMTP Mailer] Verification code sent to ${lowerEmail}: ${code}`);
+
+    return res.json({
+      message: 'Код подтверждения успешно отправлен на вашу почту',
+      email: lowerEmail
+    });
+  } catch (err: any) {
+    console.error('[Register API Error]', err);
+    return res.status(500).json({ error: err?.message || 'Ошибка сервера при регистрации' });
+  }
 });
 
 // 2. AUTH: Verify Email Code & Complete Registration
-app.post('/api/auth/verify-code', (req: Request, res: Response) => {
-  const { email, code } = req.body;
+app.post(['/api/auth/verify-code', '/api/verify-code', '/api/auth/verify-code/'], async (req: Request, res: Response) => {
+  try {
+    const { email, code } = req.body;
 
-  if (!email || !code) {
-    return res.status(400).json({ error: 'Укажите email и код подтверждения' });
-  }
-
-  const record = verificationCodes.get(email.toLowerCase());
-  if (!record) {
-    return res.status(400).json({ error: 'Код не запрашивался или срок действия истёк' });
-  }
-
-  if (record.code !== code.trim()) {
-    return res.status(400).json({ error: 'Неверный код подтверждения' });
-  }
-
-  if (record.expires_at < Date.now()) {
-    verificationCodes.delete(email.toLowerCase());
-    return res.status(400).json({ error: 'Срок действия кода истёк. Запросите новый.' });
-  }
-
-  const newUser: DBUser = {
-    id: `usr-${Date.now()}`,
-    email: record.payload.email,
-    username: record.payload.username,
-    passwordHash: record.payload.passwordHash,
-    role: 'customer',
-    account_status: 'active',
-    is_verified: true,
-    created_at: new Date().toISOString(),
-    agreements: {
-      terms_accepted: record.payload.terms_accepted,
-      terms_accepted_at: record.payload.terms_accepted_at,
-      privacy_accepted: record.payload.privacy_accepted,
-      privacy_accepted_at: record.payload.privacy_accepted_at,
-      consent_accepted: record.payload.consent_accepted,
-      consent_accepted_at: record.payload.consent_accepted_at
+    if (!email || !code) {
+      return res.status(400).json({ error: 'Укажите email и код подтверждения' });
     }
-  };
 
-  users.push(newUser);
-  verificationCodes.delete(email.toLowerCase());
+    const lowerEmail = String(email).toLowerCase().trim();
+    const record = verificationCodes.get(lowerEmail);
 
-  const access_token = generateToken(newUser.id, newUser.role, 'access');
-  const refresh_token = generateToken(newUser.id, newUser.role, 'refresh');
-
-  return res.json({
-    message: 'Регистрация успешно завершена',
-    user: sanitizeUser(newUser),
-    tokens: {
-      access_token,
-      refresh_token,
-      token_type: 'Bearer',
-      expires_in: 1800
+    if (!record) {
+      return res.status(400).json({ error: 'Код не запрашивался или срок действия истёк' });
     }
-  });
+
+    if (record.code !== String(code).trim()) {
+      return res.status(400).json({ error: 'Неверный код подтверждения' });
+    }
+
+    if (record.expires_at < Date.now()) {
+      verificationCodes.delete(lowerEmail);
+      return res.status(400).json({ error: 'Срок действия кода истёк. Запросите новый.' });
+    }
+
+    const newUser: DBUser = {
+      id: `usr-${Date.now()}`,
+      email: record.payload.email,
+      username: record.payload.username,
+      passwordHash: record.payload.passwordHash,
+      role: 'customer',
+      account_status: 'active',
+      is_verified: true,
+      created_at: new Date().toISOString(),
+      agreements: {
+        terms_accepted: record.payload.terms_accepted,
+        terms_accepted_at: record.payload.terms_accepted_at,
+        privacy_accepted: record.payload.privacy_accepted,
+        privacy_accepted_at: record.payload.privacy_accepted_at,
+        consent_accepted: record.payload.consent_accepted,
+        consent_accepted_at: record.payload.consent_accepted_at
+      }
+    };
+
+    if (dbPool) {
+      try {
+        const hashedPassword = bcrypt.hashSync(newUser.passwordHash, 10);
+        await dbPool.execute(
+          `INSERT INTO users (login, password_hash, email, verification_code, role, account_status, registration_date, is_verified, user_agreement, privacy_agreement, processing_personal_data_agreement, user_agreement_date, privacy_agreement_date, processing_personal_data_agreement_date)
+           VALUES (?, ?, ?, ?, 'user', 'active', NOW(), 1, 1, 1, 1, NOW(), NOW(), NOW())
+           ON DUPLICATE KEY UPDATE
+           login = VALUES(login),
+           password_hash = VALUES(password_hash),
+           email = VALUES(email),
+           verification_code = VALUES(verification_code),
+           is_verified = 1`,
+          [newUser.username, hashedPassword, newUser.email, record.code]
+        );
+      } catch (dbErr) {
+        console.error('[MySQL Save User Error]', dbErr);
+      }
+    }
+
+    users.push(newUser);
+    verificationCodes.delete(lowerEmail);
+
+    const access_token = generateToken(newUser.id, newUser.role, 'access');
+    const refresh_token = generateToken(newUser.id, newUser.role, 'refresh');
+
+    return res.json({
+      message: 'Регистрация успешно завершена',
+      user: sanitizeUser(newUser),
+      tokens: {
+        access_token,
+        refresh_token,
+        token_type: 'Bearer',
+        expires_in: 1800
+      }
+    });
+  } catch (err: any) {
+    console.error('[Verify Code Error]', err);
+    return res.status(500).json({ error: err?.message || 'Ошибка сервера при заверении регистрации' });
+  }
 });
 
 // 3. AUTH: Login
-app.post('/api/auth/login', (req: Request, res: Response) => {
-  const { login_identifier, password } = req.body;
+app.post(['/api/auth/login', '/api/login', '/api/auth/login/'], async (req: Request, res: Response) => {
+  try {
+    const { login_identifier, password } = req.body;
 
-  if (!login_identifier || !password) {
-    return res.status(400).json({ error: 'Введите Email/Логин и Пароль' });
-  }
-
-  const query = login_identifier.toLowerCase();
-  const user = users.find(u => u.email.toLowerCase() === query || u.username.toLowerCase() === query);
-
-  if (!user || user.passwordHash !== password) {
-    return res.status(400).json({ error: 'Неверный логин или пароль' });
-  }
-
-  const access_token = generateToken(user.id, user.role, 'access');
-  const refresh_token = generateToken(user.id, user.role, 'refresh');
-
-  return res.json({
-    user: sanitizeUser(user),
-    tokens: {
-      access_token,
-      refresh_token,
-      token_type: 'Bearer',
-      expires_in: 1800
+    if (!login_identifier || !password) {
+      return res.status(400).json({ error: 'Введите Email/Логин и Пароль' });
     }
-  });
+
+    const query = String(login_identifier).toLowerCase().trim();
+    let user = users.find(u => u.email.toLowerCase() === query || u.username.toLowerCase() === query);
+
+    if (dbPool) {
+      try {
+        const [rows]: any = await dbPool.execute(
+          'SELECT * FROM users WHERE LOWER(email) = ? OR LOWER(login) = ? LIMIT 1',
+          [query, query]
+        );
+        if (Array.isArray(rows) && rows.length > 0) {
+          const row = rows[0];
+          let passwordValid = false;
+          if (row.password_hash === password) {
+            passwordValid = true;
+          } else if (row.password_hash) {
+            try {
+              passwordValid = bcrypt.compareSync(password, row.password_hash);
+            } catch (bErr) {
+              passwordValid = false;
+            }
+          }
+
+          if (passwordValid) {
+            user = {
+              id: `usr-${row.id}`,
+              email: row.email,
+              username: row.login,
+              passwordHash: row.password_hash,
+              role: row.role === 'admin' ? 'admin' : 'customer',
+              account_status: row.account_status || 'active',
+              is_verified: !!row.is_verified,
+              created_at: row.registration_date || new Date().toISOString(),
+              telegram_handle: row.telegram_handle || '',
+              tg_id: row.tg_id || '',
+              agreements: {
+                terms_accepted: !!row.user_agreement,
+                terms_accepted_at: row.user_agreement_date || new Date().toISOString(),
+                privacy_accepted: !!row.privacy_agreement,
+                privacy_accepted_at: row.privacy_agreement_date || new Date().toISOString(),
+                consent_accepted: !!row.processing_personal_data_agreement,
+                consent_accepted_at: row.processing_personal_data_agreement_date || new Date().toISOString()
+              }
+            };
+            const existingIdx = users.findIndex(u => u.id === user?.id || u.email.toLowerCase() === query || u.username.toLowerCase() === query);
+            if (existingIdx >= 0) {
+              users[existingIdx] = user;
+            } else {
+              users.push(user);
+            }
+          }
+        }
+      } catch (dbErr) {
+        console.error('[MySQL Login Check Error]', dbErr);
+      }
+    }
+
+    if (!user) {
+      return res.status(400).json({ error: 'Неверный логин или пароль' });
+    }
+
+    let isPassCorrect = user.passwordHash === password;
+    if (!isPassCorrect && user.passwordHash) {
+      try {
+        isPassCorrect = bcrypt.compareSync(password, user.passwordHash);
+      } catch (e) {
+        isPassCorrect = false;
+      }
+    }
+
+    if (!isPassCorrect) {
+      return res.status(400).json({ error: 'Неверный логин или пароль' });
+    }
+
+    const access_token = generateToken(user.id, user.role, 'access');
+    const refresh_token = generateToken(user.id, user.role, 'refresh');
+
+    return res.json({
+      user: sanitizeUser(user),
+      tokens: {
+        access_token,
+        refresh_token,
+        token_type: 'Bearer',
+        expires_in: 1800
+      }
+    });
+  } catch (err: any) {
+    console.error('[Login Error]', err);
+    return res.status(500).json({ error: err?.message || 'Ошибка сервера при входе' });
+  }
 });
 
 // 4. AUTH: Refresh Token
@@ -405,9 +611,9 @@ app.get('/api/auth/me', authenticateUser, (req: Request, res: Response) => {
 });
 
 // 6. PROFILE: Update User Profile
-app.put('/api/profile', authenticateUser, (req: Request, res: Response) => {
+app.put('/api/profile', authenticateUser, async (req: Request, res: Response) => {
   const user = (req as any).user as DBUser;
-  const { username, new_password } = req.body;
+  const { username, new_password, telegram_handle } = req.body;
 
   if (username && username.trim().length >= 3) {
     const existing = users.find(u => u.username.toLowerCase() === username.toLowerCase() && u.id !== user.id);
@@ -421,6 +627,21 @@ app.put('/api/profile', authenticateUser, (req: Request, res: Response) => {
     user.passwordHash = new_password;
   }
 
+  if (telegram_handle !== undefined) {
+    user.telegram_handle = String(telegram_handle).replace(/^@/, '').trim();
+  }
+
+  if (dbPool) {
+    try {
+      await dbPool.execute(
+        'UPDATE users SET login = ?, password_hash = ?, telegram_handle = ? WHERE email = ?',
+        [user.username, user.passwordHash, user.telegram_handle || null, user.email]
+      );
+    } catch (dbErr) {
+      console.error('[MySQL Profile Update Error]', dbErr);
+    }
+  }
+
   return res.json({
     message: 'Профиль успешно обновлен',
     user: sanitizeUser(user)
@@ -428,9 +649,55 @@ app.put('/api/profile', authenticateUser, (req: Request, res: Response) => {
 });
 
 // 7. ORDERS: Get Orders List
-app.get('/api/orders', authenticateUser, (req: Request, res: Response) => {
+app.get('/api/orders', authenticateUser, async (req: Request, res: Response) => {
   const user = (req as any).user as DBUser;
   
+  if (dbPool) {
+    try {
+      const numericUserId = parseInt(user.id.replace(/\D/g, ''), 10);
+      let query = `
+        SELECT o.order_id, o.client_id, o.subject, o.description, o.deadline, o.created_at, o.status, o.contact,
+               p.client_price, p.executer_price, u.login as username, u.email
+        FROM orders o
+        LEFT JOIN payments p ON o.order_id = p.order_id
+        LEFT JOIN users u ON o.client_id = u.id
+      `;
+      let params: any[] = [];
+
+      if (user.role !== 'admin' && !isNaN(numericUserId)) {
+        query += ` WHERE o.client_id = ?`;
+        params.push(numericUserId);
+      }
+
+      query += ` ORDER BY o.order_id DESC`;
+
+      const [rows]: any = await dbPool.execute(query, params);
+      if (Array.isArray(rows) && rows.length > 0) {
+        const dbOrders: DBOrder[] = rows.map((r: any) => ({
+          id: `ord-${r.order_id}`,
+          title: r.subject,
+          description: r.description || '',
+          deadline: r.deadline || 'Не указан',
+          price: r.client_price ? `${r.client_price} ₽` : undefined,
+          client_price: r.client_price ? `${r.client_price} ₽` : undefined,
+          executer_price: r.executer_price ? `${r.executer_price} ₽` : undefined,
+          contact: r.contact || '',
+          status: r.status,
+          created_at: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
+          updated_at: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
+          user_id: String(r.client_id),
+          user_email: r.email || '',
+          user_username: r.username || 'Пользователь',
+          files: []
+        }));
+
+        return res.json({ orders: dbOrders });
+      }
+    } catch (dbErr) {
+      console.error('[MySQL Get Orders Error]', dbErr);
+    }
+  }
+
   if (user.role === 'admin') {
     return res.json({ orders });
   } else {
@@ -439,70 +706,141 @@ app.get('/api/orders', authenticateUser, (req: Request, res: Response) => {
   }
 });
 
-// 8. ORDERS: Create Order & Post to Telegram Bot API
-app.post('/api/orders', authenticateUser, (req: Request, res: Response) => {
-  const user = (req as any).user as DBUser;
+// 8. ORDERS: Create Order (Supports both Registered Users and Guest Orders)
+app.post('/api/orders', async (req: Request, res: Response) => {
+  try {
+    let user: DBUser | null = null;
+    const authHeader = req.headers.authorization;
 
-  // BANNED USER CHECK
-  if (user.account_status === 'banned') {
-    return res.status(403).json({
-      error: 'Ваш аккаунт заблокирован администратором. Вы не можете создавать новые заказы.'
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      const payload = verifyToken(token);
+      if (payload && payload.type === 'access') {
+        user = users.find(u => u.id === payload.userId) || null;
+      }
+    }
+
+    // Check if user is logged in and banned
+    if (user && user.account_status === 'banned') {
+      return res.status(403).json({
+        error: 'Ваш аккаунт заблокирован администратором. Вы не можете создавать новые заказы.'
+      });
+    }
+
+    const { title, description, deadline, price, contact, files, terms_accepted, privacy_accepted, consent_accepted } = req.body;
+
+    if (!title || !description || !contact) {
+      return res.status(400).json({ error: 'Заполните обязательные поля: Предмет, Описание, Контакт' });
+    }
+
+    // Guest validation: require all agreements
+    if (!user) {
+      if (!terms_accepted || !privacy_accepted || !consent_accepted) {
+        return res.status(400).json({
+          error: 'Для оформления заказа без регистрации вы обязаны согласиться с Пользовательским соглашением, Политикой конфиденциальности и Согласием на обработку персональных данных.'
+        });
+      }
+    }
+
+    const newOrder: DBOrder = {
+      id: `ord-${Math.floor(1000 + Math.random() * 9000)}`,
+      title,
+      description,
+      deadline: deadline || 'Не указан',
+      price: price || 'На обсуждении',
+      client_price: price || 'На обсуждении',
+      contact,
+      status: 'new',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      user_id: user ? user.id : 'guest',
+      user_email: user ? user.email : contact,
+      user_username: user ? user.username : 'Гость (Без регистрации)',
+      is_guest: !user,
+      guest_agreements: !user ? {
+        terms_accepted: true,
+        privacy_accepted: true,
+        consent_accepted: true,
+        agreements_accepted_at: new Date().toISOString()
+      } : undefined,
+      files: Array.isArray(files) ? files : []
+    };
+
+    if (dbPool) {
+      try {
+        let numericClientId: number | null = null;
+        if (user) {
+          const num = parseInt(user.id.replace(/\D/g, ''), 10);
+          numericClientId = !isNaN(num) && num > 0 ? num : null;
+        }
+
+        if (!numericClientId) {
+          // Find or create guest record in `users` table to get a valid client_id
+          const [existingGuestRows]: any = await dbPool.execute(
+            'SELECT id FROM users WHERE LOWER(email) = ? OR LOWER(contact) = ? LIMIT 1',
+            [contact.toLowerCase().trim(), contact.toLowerCase().trim()]
+          );
+
+          if (Array.isArray(existingGuestRows) && existingGuestRows.length > 0) {
+            numericClientId = existingGuestRows[0].id;
+          } else {
+            const guestLogin = `guest_${Date.now()}`;
+            const [res]: any = await dbPool.execute(
+              `INSERT INTO users (login, email, contact, role, account_status, is_verified, user_agreement, privacy_agreement, processing_personal_data_agreement, user_agreement_date, privacy_agreement_date, processing_personal_data_agreement_date, registration_date)
+               VALUES (?, ?, ?, 'user', 'active', 0, 1, 1, 1, NOW(), NOW(), NOW(), NOW())`,
+              [guestLogin, contact.trim(), contact.trim()]
+            );
+            numericClientId = res.insertId;
+          }
+        }
+
+        if (numericClientId) {
+          await dbPool.execute(
+            `INSERT INTO orders (client_id, subject, description, deadline, contact, source, status, created_at)
+             VALUES (?, ?, ?, ?, ?, 'website', 'new', NOW())`,
+            [
+              numericClientId,
+              title,
+              description,
+              deadline || 'Не указан',
+              contact
+            ]
+          );
+        }
+      } catch (dbErr) {
+        console.error('[MySQL Order Insert Error]', dbErr);
+      }
+    }
+
+    orders.unshift(newOrder);
+
+    // Format Telegram notification message
+    const isGuestStr = !user ? ' ГОСТЕВОЙ' : '';
+    const tgMessage = `📚 <b>Новый${isGuestStr} заказ #${newOrder.id}</b>\n\n` +
+      `<b>Предмет:</b> ${newOrder.title}\n` +
+      `<b>Описание:</b> ${newOrder.description}\n` +
+      `<b>Дедлайн:</b> ${newOrder.deadline}\n` +
+      `<b>Контакт:</b> ${newOrder.contact}\n` +
+      `<b>Клиент:</b> ${newOrder.user_username} (${newOrder.user_email})\n` +
+      (!user ? `<b>Соглашения с законами РФ приняты:</b> Да (Пользовательское, Конфиденциальность, Согласие ПД)\n` : '') +
+      `<b>Дата:</b> ${new Date(newOrder.created_at).toLocaleString('ru-RU')}\n` +
+      `<b>Файлов прикреплено:</b> ${newOrder.files.length}`;
+
+    await sendTelegramNotification(tgMessage, newOrder.files.map(f => f.name));
+
+    return res.json({
+      message: 'Заказ успешно создан и отправлен в BauSquad',
+      order: newOrder,
+      telegram_notified: true
     });
+  } catch (err: any) {
+    console.error('[Create Order Error]', err);
+    return res.status(500).json({ error: err?.message || 'Ошибка сервера при создании заказа' });
   }
-
-  const { title, description, deadline, price, contact, files } = req.body;
-
-  if (!title || !description || !contact) {
-    return res.status(400).json({ error: 'Заполните обязательные поля: Предмет, Описание, Контакт' });
-  }
-
-  const newOrder: DBOrder = {
-    id: `ord-${Math.floor(1000 + Math.random() * 9000)}`,
-    title,
-    description,
-    deadline: deadline || 'Не указан',
-    price: price || 'На обсуждении',
-    client_price: price || 'На обсуждении',
-    contact,
-    status: 'new',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    user_id: user.id,
-    user_email: user.email,
-    user_username: user.username,
-    files: Array.isArray(files) ? files : []
-  };
-
-  orders.unshift(newOrder);
-
-  // Format Telegram notification message per user requirements
-  const tgMessage = `📚 <b>Новый заказ #${newOrder.id}</b>\n\n` +
-    `<b>Предмет:</b> ${newOrder.title}\n` +
-    `<b>Описание:</b> ${newOrder.description}\n` +
-    `<b>Дедлайн:</b> ${newOrder.deadline}\n` +
-    `<b>Контакт:</b> ${newOrder.contact}\n` +
-    `<b>Автор:</b> @${newOrder.user_username} (${newOrder.user_email})\n` +
-    `<b>Дата:</b> ${new Date(newOrder.created_at).toLocaleString('ru-RU')}\n` +
-    `<b>Файлов прикреплено:</b> ${newOrder.files.length}`;
-
-  telegramLogs.unshift({
-    id: `tg-${Date.now()}`,
-    timestamp: new Date().toISOString(),
-    text: tgMessage,
-    files: newOrder.files.map(f => f.name)
-  });
-
-  console.log(`[Telegram Bot API] Message sent to Admin Chat:\n${tgMessage}`);
-
-  return res.json({
-    message: 'Заказ успешно создан и отправлен в BauSquad',
-    order: newOrder,
-    telegram_notified: true
-  });
 });
 
 // 9. ORDERS: Update Order Status (Admin)
-app.patch('/api/orders/:id/status', authenticateUser, requireAdmin, (req: Request, res: Response) => {
+app.patch('/api/orders/:id/status', authenticateUser, requireAdmin, async (req: Request, res: Response) => {
   const { id } = req.params;
   const { status } = req.body;
 
@@ -523,6 +861,24 @@ app.patch('/api/orders/:id/status', authenticateUser, requireAdmin, (req: Reques
   order.status = status as any;
   order.updated_at = new Date().toISOString();
 
+  if (dbPool) {
+    try {
+      const numericId = parseInt(id.replace(/\D/g, ''), 10);
+      if (!isNaN(numericId)) {
+        await dbPool.execute('UPDATE orders SET status = ? WHERE order_id = ?', [status, numericId]);
+      }
+    } catch (err) {
+      console.error('[MySQL Status Update Error]', err);
+    }
+  }
+
+  const tgMsg = `🔔 <b>Изменение статуса заказа #${id}</b>\n\n` +
+    `<b>Новый статус:</b> ${status}\n` +
+    `<b>Заказ:</b> ${order.title}\n` +
+    `<b>Клиент:</b> ${order.user_username} (${order.contact})`;
+
+  sendTelegramNotification(tgMsg);
+
   return res.json({
     message: `Статус заказа #${id} изменён на ${status}`,
     order
@@ -530,7 +886,7 @@ app.patch('/api/orders/:id/status', authenticateUser, requireAdmin, (req: Reques
 });
 
 // 9b. ORDERS: Update Order Prices (Client Price & Executer Price) (Admin)
-app.patch('/api/orders/:id/prices', authenticateUser, requireAdmin, (req: Request, res: Response) => {
+app.patch('/api/orders/:id/prices', authenticateUser, requireAdmin, async (req: Request, res: Response) => {
   const { id } = req.params;
   const { client_price, executer_price } = req.body;
 
@@ -552,6 +908,29 @@ app.patch('/api/orders/:id/prices', authenticateUser, requireAdmin, (req: Reques
   }
 
   order.updated_at = new Date().toISOString();
+
+  if (dbPool) {
+    try {
+      const numericId = parseInt(id.replace(/\D/g, ''), 10);
+      if (!isNaN(numericId)) {
+        await dbPool.execute(
+          `INSERT INTO payments (order_id, client_price, executer_price)
+           VALUES (?, ?, ?)
+           ON DUPLICATE KEY UPDATE client_price = VALUES(client_price), executer_price = VALUES(executer_price)`,
+          [numericId, parseFloat(client_price) || 0, parseFloat(executer_price) || 0]
+        );
+      }
+    } catch (err) {
+      console.error('[MySQL Price Update Error]', err);
+    }
+  }
+
+  const tgMsg = `💰 <b>Обновление стоимости заказа #${id}</b>\n\n` +
+    `<b>Цена для клиента:</b> ${order.client_price || 'Не указана'}\n` +
+    `<b>Цена для исполнителя:</b> ${order.executer_price || 'Не указана'}\n` +
+    `<b>Заказ:</b> ${order.title}`;
+
+  sendTelegramNotification(tgMsg);
 
   return res.json({
     message: `Цены для заказа #${id} успешно обновлены`,
@@ -643,18 +1022,37 @@ app.get('/api/admin/stats', authenticateUser, requireAdmin, (req: Request, res: 
   return res.json(stats);
 });
 
-// 14. ADMIN: Switch Role for Demo Testing
-app.post('/api/admin/demo-toggle-role', authenticateUser, (req: Request, res: Response) => {
-  const user = (req as any).user as DBUser;
-  user.role = user.role === 'admin' ? 'customer' : 'admin';
-  const access_token = generateToken(user.id, user.role, 'access');
-  const refresh_token = generateToken(user.id, user.role, 'refresh');
+// 14. SUPPORT: Submit Support Request
+app.post('/api/support', async (req: Request, res: Response) => {
+  try {
+    const { contact, message } = req.body;
+    if (!message || !message.trim()) {
+      return res.status(400).json({ error: 'Сообщение не может быть пустым' });
+    }
 
-  return res.json({
-    message: `Роль переключена на ${user.role}`,
-    user: sanitizeUser(user),
-    tokens: { access_token, refresh_token, token_type: 'Bearer', expires_in: 1800 }
-  });
+    if (dbPool) {
+      try {
+        await dbPool.execute(
+          `INSERT INTO support_requests (client_id, message, status, created_at)
+           VALUES ((SELECT id FROM users WHERE contact = ? LIMIT 1), ?, 'new', NOW())`,
+          [contact || 'Гость', message]
+        );
+      } catch (err) {
+        console.error('[MySQL Support Request Error]', err);
+      }
+    }
+
+    const tgMsg = `💬 <b>Новое обращение в техподдержку BauSquad</b>\n\n` +
+      `<b>Контакт:</b> ${contact || 'Не указан'}\n` +
+      `<b>Сообщение:</b> ${message}\n` +
+      `<b>Дата:</b> ${new Date().toLocaleString('ru-RU')}`;
+
+    await sendTelegramNotification(tgMsg);
+
+    return res.json({ message: 'Обращение успешно отправлено' });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Ошибка отправки обращения' });
+  }
 });
 
 // 15. AGREEMENTS Documents
@@ -741,6 +1139,14 @@ app.post('/api/upload', (req: Request, res: Response) => {
   });
 });
 
+// CATCH-ALL FOR UNMATCHED API ROUTES (returns JSON 404)
+app.all('/api/*', (req: Request, res: Response) => {
+  console.warn(`[404 API Not Found] ${req.method} ${req.originalUrl}`);
+  return res.status(404).json({
+    error: `Маршрут API "${req.originalUrl}" не найден на сервере BauSquad`
+  });
+});
+
 // VITE MIDDLEWARE SETUP
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
@@ -750,10 +1156,12 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
+    const docsPath = path.join(process.cwd(), 'docs');
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
+    const staticPath = fs.existsSync(docsPath) ? docsPath : distPath;
+    app.use(express.static(staticPath));
     app.get('*', (req: Request, res: Response) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+      res.sendFile(path.join(staticPath, 'index.html'));
     });
   }
 

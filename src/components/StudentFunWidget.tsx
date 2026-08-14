@@ -1,42 +1,99 @@
 import React, { useState } from 'react';
-import { Coffee, Flame, Sparkles, Smile, RefreshCw, Zap, ShieldCheck, Heart, AlertTriangle } from 'lucide-react';
+import { Coffee, Flame, Sparkles, Smile, RefreshCw, Zap, ShieldCheck } from 'lucide-react';
 
-const FUN_EXCUSES = [
-  "«Файл курса зашифровался из-за магнитной вспышки на Солнце»",
-  "«Кот заснул на клавише Delete и отредактировал 3-ю главу»",
-  "«Ноутбук ушел в глубокую технологическую медитацию»",
-  "«Методические указания вступили в философский конфликт с реальным миром»",
-  "«Флешка случайно улетела в другое измерение вместе со вторым носком»",
+// Tier 1: Light / Everyday / Academic Excuses (0-2 coffee cups or low panic)
+const TIER1_EXCUSES = [
   "«Библиографический список отказался оформляться без чашечки эспрессо»",
-  "«Графики ушли на самоизоляцию в графическом редакторе»"
+  "«Сосед за стеной включил перфоратор ровно в момент моего интеллектуального озарения»",
+  "«Форматирование по ГОСТу съехало при пересылке файла с Windows на Mac»",
+  "«Учебник из научной библиотеки оказался написан на древнеарамейском»",
+  "«Преподаватель ушел на срочную конференцию в неизвестном направлении»",
+  "«Маркер для доски высох на середине ключевого чертежа»",
+  "«Собака проявила повышенный гастрономический интерес к распечатанному титульному листу»",
+  "«Мышка потеряла связь с компьютером из-за низкого заряда батарейки»",
+  "«Ноутбук решил именно сейчас установить масштабное обновление драйверов»"
+];
+
+// Tier 2: Weird / Bizarre Academic Excuses (3-5 coffee cups or medium panic)
+const TIER2_EXCUSES = [
+  "«Методические указания вступили в философский конфликт с реальным миром»",
+  "«Графики и диаграммы ушли на самоизоляцию в графическом редакторе»",
+  "«Нейросеть устала и ушла в бессрочный отпуск до следующего семестра»",
+  "«Кот заснул на клавише Delete и профессионально отредактировал 3-ю главу»",
+  "«Флешка с исходниками улетела в другое измерение вместе со вторым носком»",
+  "«Курсовой проект ушел искать вдохновение на Лазурный берег»",
+  "«Формулы в Mathcad обрели разум и категорически отказались делиться на ноль»",
+  "«Теорема Пифагора подала на меня в суд за нарушение авторских прав»",
+  "«Системный блок начал издавать реалистичные звуки закипающего чайника»"
+];
+
+// Tier 3: Extreme Surreal & Absurd Excuses (6+ coffee cups or high panic)
+const TIER3_EXCUSES = [
+  "«Файл курса зашифровался из-за мощной магнитной вспышки на Солнце»",
+  "«Уравнения Шрёдингера одновременно решились и не решились во всех параллельных мирах»",
+  "«Инопланетяне похитили чертеж диплома для постройки летающей тарелки»",
+  "«Локальная гравитационная аномалия притянула кружку кофе прямо в центр клавиатуры»",
+  "«Экзистенциальный кризис домашнего кота заставил переосмыслить всю экономику РФ»",
+  "«Матрица переполнилась, пришлось сделать экстренную перезагрузку Вселенной»",
+  "«Чайник закипел на частоте резонанса с курсовой и стерилизовал жесткий диск»",
+  "«Духи великих ученых явились во сне и запретили сдавать эту работу без спецов BauSquad»",
+  "«Пространственно-временной континуум свернулся в бублик прямо над моим рабочим столом»"
 ];
 
 export const StudentFunWidget: React.FC<{ onCreateOrder: () => void }> = ({ onCreateOrder }) => {
   const [panicLevel, setPanicLevel] = useState<number>(45);
-  const [coffeeCount, setCoffeeCount] = useState<number>(3);
-  const [currentExcuse, setCurrentExcuse] = useState<string>(FUN_EXCUSES[0]);
-  const [isPanicReset, setIsPanicReset] = useState<boolean>(false);
+  const [coffeeCount, setCoffeeCount] = useState<number>(0);
+  const [currentExcuse, setCurrentExcuse] = useState<string>(TIER1_EXCUSES[0]);
+  const [calculatedAdvice, setCalculatedAdvice] = useState<string | null>(null);
 
+  // Classic panic level ranges
   const getPanicStatus = (level: number) => {
-    if (level < 25) return { label: 'Спокойствие и дзен 🧘', color: 'text-[#2ecc71]', border: 'border-[#2ecc71]' };
-    if (level < 60) return { label: 'Легкий дедлайновый мандраж ⚡', color: 'text-[#f1c40f]', border: 'border-[#f1c40f]' };
-    if (level < 85) return { label: 'Академическая тревога 😱', color: 'text-[#e67e22]', border: 'border-[#e67e22]' };
+    if (level <= 25) {
+      return { label: 'Спокойствие и дзен 🧘', color: 'text-[#2ecc71]', border: 'border-[#2ecc71]' };
+    }
+    if (level <= 60) {
+      return { label: 'Легкий дедлайновый мандраж ⚡', color: 'text-[#f1c40f]', border: 'border-[#f1c40f]' };
+    }
+    if (level <= 85) {
+      return { label: 'Академическая тревога 😱', color: 'text-[#e67e22]', border: 'border-[#e67e22]' };
+    }
     return { label: 'КРИТИЧЕСКАЯ ПАНИКА! ДЕДЛАЙН ВЧЕРА! 🔥🔥🔥', color: 'text-[#e74c3c]', border: 'border-[#e74c3c]' };
   };
 
   const handleCoffeeClick = () => {
-    setCoffeeCount(prev => prev + 1);
+    const newCoffee = coffeeCount + 1;
+    setCoffeeCount(newCoffee);
+    generateExcuse(panicLevel, newCoffee);
+  };
+
+  const generateExcuse = (currentPanic: number, currentCoffee: number) => {
+    const absurdityFactor = Math.floor(currentPanic / 30) + currentCoffee;
+    let pool = TIER1_EXCUSES;
+    if (absurdityFactor >= 5) {
+      pool = TIER3_EXCUSES;
+    } else if (absurdityFactor >= 2) {
+      pool = TIER2_EXCUSES;
+    }
+
+    const randomIndex = Math.floor(Math.random() * pool.length);
+    setCurrentExcuse(pool[randomIndex]);
   };
 
   const handleNewExcuse = () => {
-    const randomIndex = Math.floor(Math.random() * FUN_EXCUSES.length);
-    setCurrentExcuse(FUN_EXCUSES[randomIndex]);
+    generateExcuse(panicLevel, coffeeCount);
   };
 
-  const handlePanicReset = () => {
-    setPanicLevel(0);
-    setIsPanicReset(true);
-    setTimeout(() => setIsPanicReset(false), 5000);
+  // Calculation of panic reduction method
+  const handleCalculateReduction = () => {
+    if (panicLevel <= 20) {
+      setCalculatedAdvice('💡 РЕКОМЕНДАЦИЯ: Ваши учебные показатели в норме! Лучший метод сейчас — хорошо поспать, выпить чаю и отдохнуть.');
+    } else if (panicLevel <= 40) {
+      setCalculatedAdvice('💡 РЕКОМЕНДАЦИЯ: Рекомендуется сделать перерыв на отдых, а по наиболее сложным и проблемным предметам передать задачу командам BauSquad!');
+    } else if (panicLevel <= 80) {
+      setCalculatedAdvice('💡 РЕКОМЕНДАЦИЯ: Грамотно расставьте приоритеты! Горящие курсовые и чертежи стоит немедленно направить на выполнение авторам BauSquad.');
+    } else {
+      setCalculatedAdvice('🚨 ЭКСТРЕННЫЙ ВЫЗОВ: СРОЧНО ВЫЗЫВАЙТЕ БРИГАДУ ПОМОЩИ BAUSQUAD! Оформляйте заявку прямо сейчас, пока дедлайн окончательно не сгорел!');
+    }
   };
 
   const status = getPanicStatus(panicLevel);
@@ -75,7 +132,11 @@ export const StudentFunWidget: React.FC<{ onCreateOrder: () => void }> = ({ onCr
               min="0"
               max="100"
               value={panicLevel}
-              onChange={(e) => setPanicLevel(Number(e.target.value))}
+              onChange={(e) => {
+                const val = Number(e.target.value);
+                setPanicLevel(val);
+                generateExcuse(val, coffeeCount);
+              }}
               className="w-full h-2 bg-[#2b3d4f] rounded-lg appearance-none cursor-pointer accent-[#c5a059]"
             />
 
@@ -85,11 +146,11 @@ export const StudentFunWidget: React.FC<{ onCreateOrder: () => void }> = ({ onCr
           </div>
 
           <button
-            onClick={handlePanicReset}
-            className="w-full py-2.5 bg-[#e74c3c] hover:bg-[#c0392b] text-white font-black uppercase text-xs tracking-wider transition-all shadow-lg flex items-center justify-center gap-2 active:scale-95"
+            onClick={handleCalculateReduction}
+            className="w-full py-2.5 bg-[#c5a059] hover:bg-[#d4af37] text-black font-black uppercase text-xs tracking-wider transition-all shadow-lg flex items-center justify-center gap-2 active:scale-95"
           >
             <Zap className="w-4 h-4" />
-            <span>Сбросить панику в 0%!</span>
+            <span>Расчёт метода снижения паники</span>
           </button>
         </div>
 
@@ -121,10 +182,15 @@ export const StudentFunWidget: React.FC<{ onCreateOrder: () => void }> = ({ onCr
         {/* Module 3: Excuse Generator */}
         <div className="bg-[#0f1418] p-5 border border-[#2b3d4f] flex flex-col justify-between space-y-3">
           <div>
-            <span className="text-xs font-mono font-bold uppercase text-[#c5a059] block mb-2 flex items-center gap-1.5">
-              <Smile className="w-4 h-4 text-[#f1c40f]" />
-              Генератор отговорок
-            </span>
+            <div className="flex items-center justify-between mb-2 font-mono">
+              <span className="text-xs font-bold uppercase text-[#c5a059] flex items-center gap-1.5">
+                <Smile className="w-4 h-4 text-[#f1c40f]" />
+                Генератор отговорок
+              </span>
+              <span className="text-[10px] text-[#7f8c8d]">
+                {coffeeCount + Math.floor(panicLevel / 30) >= 5 ? 'Уровень: Абсурд 🔥' : 'Уровень: Обычный'}
+              </span>
+            </div>
 
             <div className="p-3 bg-[#1a252f] border border-white/10 text-xs italic text-[#bdc3c7] my-2 min-h-[64px] flex items-center justify-center text-center">
               {currentExcuse}
@@ -142,16 +208,16 @@ export const StudentFunWidget: React.FC<{ onCreateOrder: () => void }> = ({ onCr
 
       </div>
 
-      {/* Panic Reset Notification Card */}
-      {isPanicReset && (
-        <div className="mt-4 p-4 bg-[#0d211a] border-2 border-[#2ecc71] text-xs text-[#2ecc71] font-mono flex items-center justify-between gap-3 animate-bounce">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-5 h-5 text-[#2ecc71]" />
-            <span>ПАНИКА СБРОШЕНА! Команда BauSquad взяла ваши учебные заботы под свой контроль. Выдыхайте!</span>
+      {/* Calculated Advice Card */}
+      {calculatedAdvice && (
+        <div className="mt-4 p-4 bg-[#0d1b2a] border-2 border-[#c5a059] text-xs text-white font-mono flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-fadeIn">
+          <div className="flex items-start gap-2">
+            <ShieldCheck className="w-5 h-5 text-[#c5a059] shrink-0 mt-0.5" />
+            <span className="leading-relaxed">{calculatedAdvice}</span>
           </div>
           <button 
             onClick={onCreateOrder}
-            className="px-3 py-1 bg-[#2ecc71] text-black font-bold uppercase text-[11px] hover:bg-[#27ae60]"
+            className="px-4 py-2 bg-[#c5a059] text-black font-black uppercase text-[11px] hover:bg-[#d4af37] shrink-0"
           >
             Оформить заказ
           </button>
@@ -161,3 +227,4 @@ export const StudentFunWidget: React.FC<{ onCreateOrder: () => void }> = ({ onCr
     </div>
   );
 };
+

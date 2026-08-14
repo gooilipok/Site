@@ -10,11 +10,7 @@ export const HomePage: React.FC = () => {
   const { isAuthenticated } = useAuth();
 
   const handleCreateOrderClick = (presetTopic?: string) => {
-    if (!isAuthenticated) {
-      navigate('/login');
-    } else {
-      navigate('/order/create', { state: { presetTopic } });
-    }
+    navigate('/order/create', { state: { presetTopic } });
   };
 
   return (

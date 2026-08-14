@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Lock, User, AlertCircle, LogIn, Key, Sparkles } from 'lucide-react';
+import { Lock, User, AlertCircle, LogIn, Key, Sparkles, ArrowLeft } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
@@ -33,7 +33,17 @@ export const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-[80vh] flex items-center justify-center px-4 py-12">
+    <div className="min-h-[80vh] flex flex-col items-center justify-center px-4 py-12">
+      <div className="max-w-md w-full mb-4">
+        <Link
+          to="/"
+          className="inline-flex items-center gap-2 text-xs font-bold uppercase text-[#bdc3c7] hover:text-[#c5a059] transition-all bg-[#1a252f] px-3 py-2 border border-[#2b3d4f]"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>На главную страницу</span>
+        </Link>
+      </div>
+
       <div className="bg-[#1a252f] border-t-4 border-[#c5a059] max-w-md w-full p-8 shadow-2xl relative">
         
         {/* HEADER */}
@@ -43,32 +53,6 @@ export const LoginPage: React.FC = () => {
           </div>
           <h2 className="text-2xl font-black uppercase text-white tracking-wider">Вход в BauSquad</h2>
           <p className="text-xs text-[#bdc3c7] mt-1">Вход в личный кабинет пользователя</p>
-        </div>
-
-        {/* DEMO ACCOUNTS HELPER BANNER */}
-        <div className="mb-6 p-3 bg-[#0f1418] border border-[#2b3d4f] text-xs space-y-2">
-          <div className="flex items-center gap-1.5 text-[#f1c40f] font-bold uppercase text-[11px]">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Быстрый вход для тестирования:</span>
-          </div>
-          <div className="grid grid-cols-2 gap-2 text-[11px]">
-            <button
-              type="button"
-              onClick={() => fillDemoCreds('student@bausquad.ru', 'student123')}
-              className="p-1.5 bg-[#1a252f] border border-white/10 hover:border-[#c5a059] text-left text-[#bdc3c7] hover:text-white transition-all"
-            >
-              <strong className="block text-white">Студент</strong>
-              student@bausquad.ru
-            </button>
-            <button
-              type="button"
-              onClick={() => fillDemoCreds('admin@bausquad.ru', 'admin123')}
-              className="p-1.5 bg-[#1a252f] border border-white/10 hover:border-[#ff6b00] text-left text-[#bdc3c7] hover:text-white transition-all"
-            >
-              <strong className="block text-[#ff6b00]">Администратор</strong>
-              admin@bausquad.ru
-            </button>
-          </div>
         </div>
 
         {error && (

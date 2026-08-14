@@ -5,7 +5,7 @@ import { BauSquadLogo } from './BauSquadLogo';
 import { Shield, User as UserIcon, LogOut, PlusCircle, Menu, X, FileText, Settings, ShieldCheck } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
-  const { user, isAuthenticated, logout, toggleDemoRole } = useAuth();
+  const { user, isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -26,16 +26,13 @@ export const Navbar: React.FC = () => {
         <div className="hidden md:flex items-center gap-3">
           {isAuthenticated && user ? (
             <div className="flex items-center gap-3">
-              
-              {/* Role Toggle Switch for Demo/Testing */}
-              <button
-                onClick={toggleDemoRole}
-                title="Нажмите для смены роли (customer / admin) для тестирования"
-                className="text-[10px] px-2 py-1 bg-[#1a252f] text-[#bdc3c7] border border-white/10 hover:border-[#c5a059] transition-all flex items-center gap-1 cursor-pointer"
+              <Link
+                to="/order/create"
+                className="px-3.5 py-2 bg-[#2b3d4f] text-[#f1c40f] font-bold text-xs uppercase tracking-wider border border-[#c5a059] hover:bg-[#3d536b] transition-all flex items-center gap-1.5"
               >
-                <Settings className="w-3 h-3 text-[#c5a059]" />
-                <span>Тест роли: <strong className="text-white capitalize">{user.role}</strong></span>
-              </button>
+                <PlusCircle className="w-4 h-4 text-[#c5a059]" />
+                <span>Заказ</span>
+              </Link>
 
               {/* Admin Panel Link */}
               {user.role === 'admin' && (
@@ -69,6 +66,13 @@ export const Navbar: React.FC = () => {
           ) : (
             <div className="flex items-center gap-3">
               <Link
+                to="/order/create"
+                className="px-3.5 py-2 bg-[#c5a059] text-black font-extrabold text-xs uppercase tracking-wider hover:bg-[#d4af37] transition-all flex items-center gap-1.5"
+              >
+                <PlusCircle className="w-4 h-4" />
+                <span>Сделать заказ</span>
+              </Link>
+              <Link
                 to="/login"
                 className="px-4 py-2 border-2 border-[#c5a059] text-[#c5a059] hover:bg-[#c5a059] hover:text-black font-bold text-xs uppercase tracking-wider transition-all"
               >
@@ -101,14 +105,8 @@ export const Navbar: React.FC = () => {
               <div className="flex items-center justify-between text-[#c5a059] font-bold">
                 <span className="flex items-center gap-2">
                   <UserIcon className="w-4 h-4" />
-                  {user.username} ({user.role})
+                  {user.username}
                 </span>
-                <button
-                  onClick={toggleDemoRole}
-                  className="text-[10px] px-2 py-1 bg-black/40 text-[#f1c40f] border border-[#c5a059]/30"
-                >
-                  Сменить роль
-                </button>
               </div>
 
               {user.role === 'admin' && (
@@ -149,21 +147,30 @@ export const Navbar: React.FC = () => {
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/10">
+            <div className="space-y-2 pt-2 border-t border-white/10">
               <Link
-                to="/login"
+                to="/order/create"
                 onClick={() => setMobileMenuOpen(false)}
-                className="text-center py-2 border border-[#c5a059] text-[#c5a059] font-bold text-xs uppercase"
+                className="block text-center py-2.5 bg-[#c5a059] text-black font-extrabold uppercase text-xs shadow-md"
               >
-                Вход
+                + Сделать заказ без регистрации
               </Link>
-              <Link
-                to="/register"
-                onClick={() => setMobileMenuOpen(false)}
-                className="text-center py-2 bg-[#2b3d4f] text-white font-bold text-xs uppercase"
-              >
-                Регистрация
-              </Link>
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <Link
+                  to="/login"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="text-center py-2 border border-[#c5a059] text-[#c5a059] font-bold text-xs uppercase"
+                >
+                  Вход
+                </Link>
+                <Link
+                  to="/register"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="text-center py-2 bg-[#2b3d4f] text-white font-bold text-xs uppercase"
+                >
+                  Регистрация
+                </Link>
+              </div>
             </div>
           )}
         </div>

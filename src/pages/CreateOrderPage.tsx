@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { FileUp, Send, CheckCircle2, AlertCircle, ArrowLeft, Paperclip, X, Clock, BookOpen, MessageSquare, Info } from 'lucide-react';
+import { FileUp, Send, CheckCircle2, AlertCircle, ArrowLeft, Paperclip, X, Clock, BookOpen, MessageSquare, Info, ShieldCheck } from 'lucide-react';
 import { OrderFile } from '../types';
 
 export const CreateOrderPage: React.FC = () => {
@@ -13,7 +13,12 @@ export const CreateOrderPage: React.FC = () => {
   const [description, setDescription] = useState('');
   const [deadline, setDeadline] = useState('');
   const [price, setPrice] = useState('');
-  const [contact, setContact] = useState('');
+  const [contact, setContact] = useState(user?.email || user?.username || '');
+
+  // Agreements for Guest users
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
+  const [consentAccepted, setConsentAccepted] = useState(false);
 
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [filePreviews, setFilePreviews] = useState<OrderFile[]>([]);
@@ -28,10 +33,11 @@ export const CreateOrderPage: React.FC = () => {
     }
   }, [location.state]);
 
-  if (!isAuthenticated) {
-    navigate('/login');
-    return null;
-  }
+  useEffect(() => {
+    if (user) {
+      setContact(prev => prev || user.email || user.username);
+    }
+  }, [user]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -70,6 +76,14 @@ export const CreateOrderPage: React.FC = () => {
       return;
     }
 
+    // Guest agreement validation
+    if (!isAuthenticated) {
+      if (!termsAccepted || !privacyAccepted || !consentAccepted) {
+        setError('Для оформления заказа без регистрации вы обязаны подтвердить согласие с каждым из трех документов!');
+        return;
+      }
+    }
+
     setLoading(true);
 
     try {
@@ -79,15 +93,23 @@ export const CreateOrderPage: React.FC = () => {
         deadline,
         price: 'На обсуждении',
         contact,
-        files: filePreviews
+        files: filePreviews,
+        terms_accepted: isAuthenticated ? true : termsAccepted,
+        privacy_accepted: isAuthenticated ? true : privacyAccepted,
+        consent_accepted: isAuthenticated ? true : consentAccepted,
       };
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
+
+      if (tokens?.access_token) {
+        headers['Authorization'] = `Bearer ${tokens.access_token}`;
+      }
 
       const resp = await fetch('/api/orders', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${tokens?.access_token}`
-        },
+        headers,
         body: JSON.stringify(payload)
       });
 
@@ -99,8 +121,10 @@ export const CreateOrderPage: React.FC = () => {
       } else {
         setCreatedSuccess(true);
         setTimeout(() => {
-          navigate('/profile');
-        }, 2000);
+          if (isAuthenticated) {
+            navigate('/profile');
+          }
+        }, 3000);
       }
     } catch {
       setLoading(false);
@@ -292,6 +316,56 @@ export const CreateOrderPage: React.FC = () => {
                 </div>
               )}
             </div>
+
+            {/* AGREEMENTS BLOCK FOR GUEST USERS */}
+            {!isAuthenticated && (
+              <div className="p-4 bg-[#0f1418] border-t-2 border-[#c5a059] space-y-3">
+                <div className="flex items-center gap-2 text-[#c5a059] font-bold text-xs uppercase">
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>Обязательное согласие с документами (для оформления без регистрации)</span>
+                </div>
+                <p className="text-[11px] text-[#bdc3c7]">
+                  Согласно закону РФ о персональных данных, оформление заявки требует вашего подтверждения согласия с документами платформы:
+                </p>
+                <div className="space-y-2 text-xs text-white">
+                  <label className="flex items-start gap-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={termsAccepted}
+                      onChange={(e) => setTermsAccepted(e.target.checked)}
+                      className="mt-0.5 accent-[#c5a059] w-4 h-4 cursor-pointer"
+                    />
+                    <span>
+                      Я принимаю <Link to="/terms" target="_blank" className="text-[#c5a059] underline hover:text-white">Пользовательское соглашение</Link> *
+                    </span>
+                  </label>
+
+                  <label className="flex items-start gap-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={privacyAccepted}
+                      onChange={(e) => setPrivacyAccepted(e.target.checked)}
+                      className="mt-0.5 accent-[#c5a059] w-4 h-4 cursor-pointer"
+                    />
+                    <span>
+                      Я ознакомлен с <Link to="/privacy" target="_blank" className="text-[#c5a059] underline hover:text-white">Политикой конфиденциальности</Link> *
+                    </span>
+                  </label>
+
+                  <label className="flex items-start gap-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={consentAccepted}
+                      onChange={(e) => setConsentAccepted(e.target.checked)}
+                      className="mt-0.5 accent-[#c5a059] w-4 h-4 cursor-pointer"
+                    />
+                    <span>
+                      Я даю <Link to="/consent" target="_blank" className="text-[#c5a059] underline hover:text-white">Согласие на обработку персональных данных</Link> *
+                    </span>
+                  </label>
+                </div>
+              </div>
+            )}
 
             {/* ORDER PREVIEW CARD */}
             <div className="p-4 bg-[#0f1418] border-l-4 border-[#c5a059] text-xs space-y-2">

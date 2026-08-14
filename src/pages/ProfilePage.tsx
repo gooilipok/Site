@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Order, OrderStatus } from '../types';
-import { User as UserIcon, Mail, Shield, Calendar, Edit3, PlusCircle, CheckCircle2, Clock, XCircle, AlertCircle, FileText, Download, LogOut, Settings, Ban } from 'lucide-react';
+import { User as UserIcon, Mail, Shield, Calendar, Edit3, PlusCircle, CheckCircle2, Clock, XCircle, AlertCircle, FileText, Download, LogOut, Settings, Ban, Send, MessageSquare, ArrowLeft } from 'lucide-react';
 
 export const ProfilePage: React.FC = () => {
   const { user, tokens, logout, updateProfile, toggleDemoRole } = useAuth();
@@ -19,8 +19,20 @@ export const ProfilePage: React.FC = () => {
   const [editSuccess, setEditSuccess] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // Telegram link state
+  const [telegramInput, setTelegramInput] = useState(user?.telegram_handle || '');
+  const [tgSuccess, setTgSuccess] = useState<string | null>(null);
+  const [tgError, setTgError] = useState<string | null>(null);
+  const [savingTg, setSavingTg] = useState(false);
+
   // Filter orders by status
   const [statusFilter, setStatusFilter] = useState<string>('all');
+
+  useEffect(() => {
+    if (user?.telegram_handle) {
+      setTelegramInput(user.telegram_handle);
+    }
+  }, [user]);
 
   useEffect(() => {
     if (!user) {
@@ -65,6 +77,24 @@ export const ProfilePage: React.FC = () => {
     }
   };
 
+  const handleSaveTelegram = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setTgError(null);
+    setTgSuccess(null);
+
+    setSavingTg(true);
+    const formattedHandle = telegramInput.replace(/^@/, '').trim();
+    const result = await updateProfile(undefined, undefined, formattedHandle);
+    setSavingTg(false);
+
+    if (!result.success) {
+      setTgError(result.error || 'Не удалось привязать Telegram');
+    } else {
+      setTgSuccess('Telegram аккаунт успешно привязан!');
+      setTimeout(() => setTgSuccess(null), 3000);
+    }
+  };
+
   if (!user) return null;
 
   const filteredOrders = statusFilter === 'all'
@@ -102,6 +132,17 @@ export const ProfilePage: React.FC = () => {
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 space-y-8">
       
+      {/* BACK TO HOME BUTTON */}
+      <div>
+        <Link
+          to="/"
+          className="inline-flex items-center gap-2 text-xs font-bold uppercase text-[#bdc3c7] hover:text-[#c5a059] transition-all bg-[#1a252f] px-3 py-2 border border-[#2b3d4f]"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>На главную страницу</span>
+        </Link>
+      </div>
+
       {/* USER PROFILE HEADER CARD */}
       <div className="bg-[#1a252f] border-t-4 border-[#c5a059] p-6 md:p-8 shadow-2xl relative">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
@@ -113,9 +154,11 @@ export const ProfilePage: React.FC = () => {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-black text-white uppercase tracking-wider">{user.username}</h1>
-                <span className={`badge-status ${user.role === 'admin' ? 'badge-admin' : 'badge-customer'}`}>
-                  {user.role}
-                </span>
+                {user.role === 'admin' && (
+                  <span className="badge-status badge-admin">
+                    Администратор
+                  </span>
+                )}
                 {user.account_status === 'banned' && (
                   <span className="px-2 py-0.5 bg-[#e74c3c] text-white font-bold text-[10px] uppercase rounded-xs flex items-center gap-1">
                     <Ban className="w-3 h-3" />
@@ -150,15 +193,6 @@ export const ProfilePage: React.FC = () => {
             </button>
 
             <button
-              onClick={toggleDemoRole}
-              title="Переключить роль для тестирования"
-              className="px-3 py-2 border border-[#c5a059] text-[#c5a059] font-bold text-xs uppercase hover:bg-[#c5a059] hover:text-black transition-all flex items-center gap-1"
-            >
-              <Settings className="w-3.5 h-3.5" />
-              <span>Тест роли</span>
-            </button>
-
-            <button
               onClick={() => {
                 logout();
                 navigate('/');
@@ -186,6 +220,56 @@ export const ProfilePage: React.FC = () => {
             <CheckCircle2 className="w-4 h-4 text-[#2ecc71]" />
             <span>Согласие на обработку ПД: <strong className="text-white">Принято</strong></span>
           </div>
+        </div>
+
+        {/* TELEGRAM ACCOUNT LINKING CARD */}
+        <div className="mt-6 pt-4 border-t border-white/10 bg-[#0f1418] p-4 border border-[#2b3d4f]">
+          <div className="flex items-center gap-2 text-[#c5a059] font-bold text-xs uppercase mb-2">
+            <MessageSquare className="w-4 h-4" />
+            <span>Привязка Telegram аккаунта</span>
+          </div>
+
+          <form onSubmit={handleSaveTelegram} className="space-y-3">
+            <div className="flex flex-col sm:flex-row items-stretch gap-3">
+              <div className="relative flex-1">
+                <span className="absolute left-3 top-2.5 text-[#bdc3c7] font-bold text-xs">@</span>
+                <input
+                  type="text"
+                  value={telegramInput}
+                  onChange={(e) => setTelegramInput(e.target.value)}
+                  placeholder="ваш_telegram_username"
+                  className="w-full bg-[#1a252f] border border-[#3d4e5f] text-white p-2 pl-7 text-xs focus:border-[#c5a059] focus:outline-none"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={savingTg}
+                className="px-4 py-2 bg-[#c5a059] text-black font-black text-xs uppercase hover:bg-[#d4af37] transition-all flex items-center justify-center gap-1.5 shrink-0"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>{savingTg ? 'Сохранение...' : user?.telegram_handle ? 'Обновить Telegram' : 'Привязать Telegram'}</span>
+              </button>
+            </div>
+
+            {tgSuccess && (
+              <p className="text-xs text-[#2ecc71] flex items-center gap-1 font-bold">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>{tgSuccess}</span>
+              </p>
+            )}
+
+            {tgError && (
+              <p className="text-xs text-[#e74c3c] flex items-center gap-1 font-bold">
+                <AlertCircle className="w-3.5 h-3.5" />
+                <span>{tgError}</span>
+              </p>
+            )}
+
+            <p className="text-[11px] text-[#bdc3c7]">
+              Привязка Telegram аккаунта необходима для моментального получения статусов заказов и быстрой связи с автором. Наш бот: <a href="https://t.me/bausquad_bot" target="_blank" rel="noopener noreferrer" className="text-[#3498db] underline font-bold">@bausquad_bot</a>
+            </p>
+          </form>
         </div>
       </div>
 

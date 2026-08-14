@@ -28,6 +28,9 @@ export const BauSquadLogo: React.FC<LogoProps> = ({
         xmlns="http://www.w3.org/2000/svg"
         className="shrink-0 drop-shadow-md"
       >
+        {/* White Inner Fill Background */}
+        <circle cx="100" cy="100" r="88" fill="#FFFFFF" />
+
         {/* Outer Ring with Ticks */}
         <circle cx="100" cy="100" r="88" stroke="#1E2B37" strokeWidth="4" />
         <circle cx="100" cy="100" r="84" stroke="#C5A059" strokeWidth="1.5" strokeDasharray="4 4" />

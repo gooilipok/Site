@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ShieldCheck, Mail, Lock, User, FileText, CheckCircle, AlertCircle, KeyRound, ArrowRight } from 'lucide-react';
+import { ShieldCheck, Mail, Lock, User, FileText, CheckCircle, AlertCircle, KeyRound, ArrowRight, ArrowLeft } from 'lucide-react';
 
 export const RegisterPage: React.FC = () => {
   const navigate = useNavigate();
@@ -18,7 +18,6 @@ export const RegisterPage: React.FC = () => {
 
   const [step, setStep] = useState<'form' | 'verification'>('form');
   const [verificationCode, setVerificationCode] = useState('');
-  const [demoCode, setDemoCode] = useState<string | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -58,9 +57,6 @@ export const RegisterPage: React.FC = () => {
       setError(result.error || 'Ошибка при отправке данных');
     } else {
       setStep('verification');
-      if (result.demo_code) {
-        setDemoCode(result.demo_code);
-      }
     }
   };
 
@@ -85,7 +81,17 @@ export const RegisterPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-[80vh] flex items-center justify-center px-4 py-12">
+    <div className="min-h-[80vh] flex flex-col items-center justify-center px-4 py-12">
+      <div className="max-w-lg w-full mb-4">
+        <Link
+          to="/"
+          className="inline-flex items-center gap-2 text-xs font-bold uppercase text-[#bdc3c7] hover:text-[#c5a059] transition-all bg-[#1a252f] px-3 py-2 border border-[#2b3d4f]"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>На главную страницу</span>
+        </Link>
+      </div>
+
       <div className="bg-[#1a252f] border-t-4 border-[#c5a059] max-w-lg w-full p-8 shadow-2xl relative">
         
         {/* HEADER */}
@@ -257,12 +263,6 @@ export const RegisterPage: React.FC = () => {
                 Код подтверждения отправлен на <strong className="text-white">{email}</strong>
               </p>
             </div>
-
-            {demoCode && (
-              <div className="p-3 bg-[#f1c40f]/10 border border-[#f1c40f]/40 text-[#f1c40f] text-xs text-center font-mono">
-                [SMTP Демо Режим] Ваш код: <strong className="text-white text-lg tracking-widest">{demoCode}</strong>
-              </div>
-            )}
 
             <div>
               <label className="block text-xs font-bold uppercase text-[#c5a059] mb-1">6-значный код из письма *</label>

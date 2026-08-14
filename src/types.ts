@@ -19,6 +19,8 @@ export interface User {
   is_verified: boolean;
   created_at: string;
   updated_at?: string;
+  telegram_handle?: string;
+  tg_id?: string;
   agreements: UserAgreementConsents;
   order_count?: number;
 }
@@ -49,6 +51,8 @@ export interface Order {
   user_id: string;
   user_email: string;
   user_username: string;
+  is_guest?: boolean;
+  guest_agreements?: UserAgreementConsents;
   files: OrderFile[];
 }
 

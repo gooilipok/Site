@@ -14,10 +14,9 @@ interface AuthContextType {
     terms_accepted: boolean;
     privacy_accepted: boolean;
     consent_accepted: boolean;
-  }) => Promise<{ success: boolean; demo_code?: string; error?: string }>;
+  }) => Promise<{ success: boolean; error?: string }>;
   verifyEmailCode: (email: string, code: string) => Promise<{ success: boolean; error?: string }>;
-  updateProfile: (username?: string, newPassword?: string) => Promise<{ success: boolean; error?: string }>;
-  toggleDemoRole: () => Promise<void>;
+  updateProfile: (username?: string, newPassword?: string, telegramHandle?: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
 }
 
@@ -112,7 +111,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: false, error: data.error || 'Ошибка регистрации' };
       }
 
-      return { success: true, demo_code: data.demo_code };
+      return { success: true };
     } catch {
       return { success: false, error: 'Ошибка соединения с сервером' };
     }
@@ -138,7 +137,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const updateProfile = async (username?: string, newPassword?: string) => {
+  const updateProfile = async (username?: string, newPassword?: string, telegramHandle?: string) => {
     if (!tokens?.access_token) return { success: false, error: 'Не авторизован' };
 
     try {
@@ -148,7 +147,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           'Content-Type': 'application/json',
           Authorization: `Bearer ${tokens.access_token}`
         },
-        body: JSON.stringify({ username, new_password: newPassword })
+        body: JSON.stringify({ username, new_password: newPassword, telegram_handle: telegramHandle })
       });
 
       const data = await resp.json();
@@ -161,22 +160,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: true };
     } catch {
       return { success: false, error: 'Ошибка соединения' };
-    }
-  };
-
-  const toggleDemoRole = async () => {
-    if (!tokens?.access_token) return;
-    try {
-      const resp = await fetch('/api/admin/demo-toggle-role', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${tokens.access_token}` }
-      });
-      if (resp.ok) {
-        const data = await resp.json();
-        saveAuthSession(data.user, data.tokens);
-      }
-    } catch (e) {
-      console.error('Role toggle error:', e);
     }
   };
 
@@ -198,7 +181,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         registerStep1,
         verifyEmailCode,
         updateProfile,
-        toggleDemoRole,
         logout
       }}
     >

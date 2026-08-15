@@ -34,6 +34,8 @@ import express, { Request, Response, NextFunction } from 'express';
 import { createServer as createViteServer } from 'vite';
 import mysql from 'mysql2/promise';
 import bcrypt from 'bcryptjs';
+import nodemailer from 'nodemailer';
+import crypto from 'crypto';
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -196,8 +198,78 @@ app.get(['/api/health', '/health', '/api/ping', '/ping'], async (req: Request, r
     telegram: {
       bot_token_set: Boolean(process.env.TELEGRAM_BOT_TOKEN),
       chat_id_set: Boolean(process.env.TELEGRAM_ADMIN_CHAT_ID || process.env.TELEGRAM_CHAT_ID)
+    },
+    smtp: {
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port: process.env.SMTP_PORT || '587',
+      user_set: Boolean(process.env.SMTP_USER),
+      password_set: Boolean(process.env.SMTP_PASSWORD || process.env.SMTP_PASS),
+      from: process.env.SMTP_FROM || `BauSquad <${process.env.SMTP_USER || 'noreply@bausquad.org'}>`
     }
   });
+});
+
+// Email / SMTP diagnostics and live test endpoint
+app.get(['/api/email/test', '/api/mail/test'], async (req: Request, res: Response) => {
+  const targetEmail = (req.query.to as string) || process.env.SMTP_USER;
+
+  if (!process.env.SMTP_USER || !(process.env.SMTP_PASSWORD || process.env.SMTP_PASS)) {
+    return res.status(400).json({
+      success: false,
+      error: 'SMTP_USER или SMTP_PASSWORD не настроены в файле .env',
+      config: {
+        host: process.env.SMTP_HOST || 'smtp.gmail.com',
+        port: process.env.SMTP_PORT || '587',
+        user_set: Boolean(process.env.SMTP_USER),
+        password_set: Boolean(process.env.SMTP_PASSWORD || process.env.SMTP_PASS)
+      }
+    });
+  }
+
+  if (!targetEmail) {
+    return res.status(400).json({
+      success: false,
+      error: 'Укажите email для проверки: /api/email/test?to=your_email@example.com'
+    });
+  }
+
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 540px; margin: 0 auto; padding: 24px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;">
+      <h2 style="color: #0f172a; margin-top: 0;">Тестовое письмо от BauSquad</h2>
+      <p style="color: #475569; font-size: 15px; line-height: 1.6;">
+        Это проверочное сообщение отправлено с вашего сервера для подтверждения корректности работы почтового шлюза (SMTP).
+      </p>
+      <div style="background: #f8fafc; border-left: 4px solid #2563eb; padding: 12px 16px; margin: 20px 0; border-radius: 4px;">
+        <p style="margin: 0; color: #1e293b; font-size: 14px;"><strong>Статус:</strong> SMTP подключение успешно активно</p>
+        <p style="margin: 4px 0 0 0; color: #64748b; font-size: 13px;">Время отправки: ${new Date().toLocaleString('ru-RU')}</p>
+      </div>
+      <p style="color: #94a3b8; font-size: 12px; margin-bottom: 0;">Команда BauSquad &bull; bausquad.org</p>
+    </div>
+  `;
+
+  const result = await sendEmailNotification(
+    targetEmail,
+    'Тестовое письмо от BauSquad (Проверка SMTP)',
+    html
+  );
+
+  if (result.success) {
+    return res.json({
+      success: true,
+      message: `Тестовое письмо успешно отправлено на ${targetEmail}`,
+      messageId: result.messageId
+    });
+  } else {
+    return res.status(500).json({
+      success: false,
+      error: result.error || 'Не удалось отправить письмо через SMTP',
+      smtp_config: {
+        host: process.env.SMTP_HOST || 'smtp.gmail.com',
+        port: process.env.SMTP_PORT || '587',
+        user: process.env.SMTP_USER
+      }
+    });
+  }
 });
 
 // Telegram diagnostics and live test endpoint
@@ -542,6 +614,110 @@ async function sendTelegramNotification(text: string, files: string[] = []) {
   }
 }
 
+// Universal Password Verifier supporting Bcrypt, MD5, SHA256, SHA512, Django/PBKDF2 and Plaintext
+function verifyPassword(plainPassword: string, storedHash: string | null | undefined): boolean {
+  if (!storedHash || !plainPassword) return false;
+
+  // 1. Direct match (e.g. plaintext passwords in legacy systems)
+  if (storedHash === plainPassword) return true;
+
+  // 2. Bcrypt hash ($2a$, $2b$, $2y$)
+  if (storedHash.startsWith('$2a$') || storedHash.startsWith('$2b$') || storedHash.startsWith('$2y$')) {
+    try {
+      if (bcrypt.compareSync(plainPassword, storedHash)) return true;
+    } catch (e) {
+      // Continue to other formats if bcrypt throws
+    }
+  }
+
+  // 3. MD5 hash (32 hex characters)
+  const md5Hash = crypto.createHash('md5').update(plainPassword).digest('hex');
+  if (storedHash.toLowerCase() === md5Hash.toLowerCase()) return true;
+
+  // 4. SHA256 hash (64 hex characters)
+  const sha256Hash = crypto.createHash('sha256').update(plainPassword).digest('hex');
+  if (storedHash.toLowerCase() === sha256Hash.toLowerCase()) return true;
+
+  // 5. SHA512 hash (128 hex characters)
+  const sha512Hash = crypto.createHash('sha512').update(plainPassword).digest('hex');
+  if (storedHash.toLowerCase() === sha512Hash.toLowerCase()) return true;
+
+  // 6. Django / Python PBKDF2 format (pbkdf2_sha256$iterations$salt$hash)
+  if (storedHash.startsWith('pbkdf2_sha256$')) {
+    try {
+      const parts = storedHash.split('$');
+      if (parts.length === 4) {
+        const iterations = parseInt(parts[1], 10);
+        const salt = parts[2];
+        const expectedHash = parts[3];
+        const derivedKey = crypto.pbkdf2Sync(plainPassword, salt, iterations, 32, 'sha256');
+        const computedBase64 = derivedKey.toString('base64');
+        if (computedBase64 === expectedHash) return true;
+      }
+    } catch (pbErr) {
+      console.warn('[PBKDF2 Verify Error]', pbErr);
+    }
+  }
+
+  // 7. General fallback bcrypt attempt
+  try {
+    return bcrypt.compareSync(plainPassword, storedHash);
+  } catch (e) {
+    return false;
+  }
+}
+
+// SMTP Mailer Transport Creator
+function getMailTransporter() {
+  const host = process.env.SMTP_HOST || 'smtp.gmail.com';
+  const port = parseInt(process.env.SMTP_PORT || '587', 10);
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASSWORD || process.env.SMTP_PASS;
+
+  if (!user || !pass) {
+    return null;
+  }
+
+  return nodemailer.createTransport({
+    host,
+    port,
+    secure: port === 465, // true for 465, false for 587 / 25
+    auth: {
+      user,
+      pass
+    },
+    tls: {
+      rejectUnauthorized: false
+    }
+  });
+}
+
+// Send Email Notification Helper
+async function sendEmailNotification(to: string, subject: string, htmlContent: string, textContent?: string): Promise<{ success: boolean; error?: string; messageId?: string }> {
+  const transporter = getMailTransporter();
+  if (!transporter) {
+    console.warn(`[SMTP Mailer Warning] SMTP_USER or SMTP_PASSWORD not configured. Email to ${to} was not sent.`);
+    return { success: false, error: 'SMTP настройки (SMTP_USER / SMTP_PASSWORD) не заданы в .env' };
+  }
+
+  const from = process.env.SMTP_FROM || `BauSquad <${process.env.SMTP_USER}>`;
+
+  try {
+    const info = await transporter.sendMail({
+      from,
+      to,
+      subject,
+      text: textContent || htmlContent.replace(/<[^>]*>?/gm, ''),
+      html: htmlContent
+    });
+    console.log(`[SMTP Mailer] Email sent successfully to ${to}, MessageID: ${info.messageId}`);
+    return { success: true, messageId: info.messageId };
+  } catch (err: any) {
+    console.error(`[SMTP Mailer Error] Failed to send email to ${to}:`, err?.message || err);
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+
 // JWT helper
 function generateToken(userId: string, role: string, type: 'access' | 'refresh') {
   const secret = process.env.SECRET_KEY || 'bau_squad_secret_key';
@@ -673,11 +849,46 @@ app.post(['/api/auth/register', '/api/register', '/api/auth/register/'], async (
       }
     });
 
-    console.log(`[SMTP Mailer] Verification code sent to ${lowerEmail}: ${code}`);
+    console.log(`[SMTP Mailer] Verification code generated for ${lowerEmail}: ${code}`);
+
+    // Send code to user's email via SMTP
+    const emailHtml = `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 28px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;">
+        <div style="text-align: center; margin-bottom: 24px;">
+          <h2 style="color: #0f172a; margin: 0 0 8px 0; font-size: 24px;">Подтверждение регистрации</h2>
+          <p style="color: #64748b; margin: 0; font-size: 15px;">Добро пожаловать в сервис BauSquad!</p>
+        </div>
+        <p style="color: #334155; font-size: 15px; line-height: 1.6;">
+          Здравствуйте, <strong>${lowerUsername}</strong>! Для завершения создания вашего аккаунта на сайте <strong>bausquad.org</strong> введите код подтверждения:
+        </p>
+        <div style="background: #f1f5f9; border: 2px dashed #94a3b8; border-radius: 8px; padding: 18px; text-align: center; margin: 24px 0;">
+          <span style="font-size: 32px; font-weight: 700; letter-spacing: 8px; color: #1e293b; font-family: monospace;">${code}</span>
+        </div>
+        <p style="color: #64748b; font-size: 13px; line-height: 1.5;">
+          ⏱ Код действителен в течение 15 минут.<br>
+          Если вы не запрашивали данный код, просто проигнорируйте это письмо.
+        </p>
+        <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;">
+        <p style="color: #94a3b8; font-size: 12px; margin: 0; text-align: center;">
+          Служба поддержки BauSquad &bull; bausquad.org
+        </p>
+      </div>
+    `;
+
+    // Asynchronously dispatch email
+    const mailResult = await sendEmailNotification(
+      lowerEmail,
+      `Код подтверждения регистрации BauSquad: ${code}`,
+      emailHtml
+    );
 
     return res.json({
-      message: 'Код подтверждения успешно отправлен на вашу почту',
-      email: lowerEmail
+      message: mailResult.success
+        ? 'Код подтверждения успешно отправлен на вашу почту'
+        : 'Код подтверждения сгенерирован (проверьте также настройки SMTP в .env)',
+      email: lowerEmail,
+      smtp_sent: mailResult.success,
+      smtp_error: mailResult.error || null
     });
   } catch (err: any) {
     console.error('[Register API Error]', err);
@@ -790,16 +1001,7 @@ app.post(['/api/auth/login', '/api/login', '/api/auth/login/'], async (req: Requ
         );
         if (Array.isArray(rows) && rows.length > 0) {
           const row = rows[0];
-          let passwordValid = false;
-          if (row.password_hash === password) {
-            passwordValid = true;
-          } else if (row.password_hash) {
-            try {
-              passwordValid = bcrypt.compareSync(password, row.password_hash);
-            } catch (bErr) {
-              passwordValid = false;
-            }
-          }
+          const passwordValid = verifyPassword(password, row.password_hash);
 
           if (passwordValid) {
             user = {
@@ -839,14 +1041,7 @@ app.post(['/api/auth/login', '/api/login', '/api/auth/login/'], async (req: Requ
       return res.status(400).json({ error: 'Неверный логин или пароль' });
     }
 
-    let isPassCorrect = user.passwordHash === password;
-    if (!isPassCorrect && user.passwordHash) {
-      try {
-        isPassCorrect = bcrypt.compareSync(password, user.passwordHash);
-      } catch (e) {
-        isPassCorrect = false;
-      }
-    }
+    const isPassCorrect = verifyPassword(password, user.passwordHash);
 
     if (!isPassCorrect) {
       return res.status(400).json({ error: 'Неверный логин или пароль' });

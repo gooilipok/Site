@@ -75,6 +75,46 @@ let dbStatus = {
   lastChecked: null as string | null
 };
 
+// Automatic database schema migration to ensure agreements columns and guest user exist
+async function ensureDatabaseSchema(pool: mysql.Pool) {
+  try {
+    // 1. Ensure system guest user with ID 1 exists so Foreign Keys never fail
+    await pool.execute(
+      `INSERT IGNORE INTO users (id, login, email, password_hash, role, account_status, registration_date, is_verified, user_agreement, privacy_agreement, processing_personal_data_agreement, user_agreement_date, privacy_agreement_date, processing_personal_data_agreement_date)
+       VALUES (1, 'website_guest', 'guest@bausquad.org', 'nopassword', 'user', 'active', NOW(), 1, 1, 1, 1, NOW(), NOW(), NOW())`
+    );
+
+    // 2. Check existing columns in orders table
+    const [cols]: any = await pool.query(`SHOW COLUMNS FROM orders`);
+    const existingColNames = Array.isArray(cols) ? cols.map((c: any) => c.Field.toLowerCase()) : [];
+
+    if (!existingColNames.includes('terms_accepted')) {
+      await pool.query(`ALTER TABLE orders ADD COLUMN terms_accepted TINYINT(1) NOT NULL DEFAULT 1`);
+      console.log('[MySQL Migration] Added column terms_accepted to orders');
+    }
+    if (!existingColNames.includes('privacy_accepted')) {
+      await pool.query(`ALTER TABLE orders ADD COLUMN privacy_accepted TINYINT(1) NOT NULL DEFAULT 1`);
+      console.log('[MySQL Migration] Added column privacy_accepted to orders');
+    }
+    if (!existingColNames.includes('consent_accepted')) {
+      await pool.query(`ALTER TABLE orders ADD COLUMN consent_accepted TINYINT(1) NOT NULL DEFAULT 1`);
+      console.log('[MySQL Migration] Added column consent_accepted to orders');
+    }
+    if (!existingColNames.includes('agreements_accepted_at')) {
+      await pool.query(`ALTER TABLE orders ADD COLUMN agreements_accepted_at DATETIME NULL`);
+      console.log('[MySQL Migration] Added column agreements_accepted_at to orders');
+    }
+    if (!existingColNames.includes('guest_email')) {
+      await pool.query(`ALTER TABLE orders ADD COLUMN guest_email VARCHAR(255) NULL`);
+      console.log('[MySQL Migration] Added column guest_email to orders');
+    }
+
+    console.log('[MySQL Migration] Database schema verified successfully with agreement tracking.');
+  } catch (err: any) {
+    console.warn('[MySQL Migration Warning]:', err?.message || err);
+  }
+}
+
 // Initialize MySQL Database Pool if credentials provided
 function initDatabasePool() {
   const mysqlHost = process.env.MYSQL_HOST || 'mysql.hosting.nic.ru';
@@ -101,13 +141,16 @@ function initDatabasePool() {
       dbStatus.host = mysqlHost;
       dbStatus.database = mysqlDatabase;
 
-      // Perform live connection verification
+      // Perform live connection verification & schema migration
       dbPool.query('SELECT 1 as healthcheck')
-        .then(() => {
+        .then(async () => {
           dbStatus.connected = true;
           dbStatus.error = null;
           dbStatus.lastChecked = new Date().toISOString();
           console.log(`[MySQL] Connection established to ${mysqlHost}/${mysqlDatabase}`);
+          if (dbPool) {
+            await ensureDatabaseSchema(dbPool);
+          }
         })
         .catch((err: any) => {
           dbStatus.connected = false;
@@ -167,11 +210,11 @@ app.get('/api/db/test', async (req: Request, res: Response) => {
     const [ordersCount]: any = await dbPool.query('SELECT COUNT(*) as count FROM orders');
     const [recentOrders]: any = await dbPool.query('SELECT order_id, client_id, subject, status, created_at FROM orders ORDER BY order_id DESC LIMIT 5');
 
-    // Test a dummy insertion into orders
+    // Test a dummy insertion into orders with client_id 1 and confirmed agreements
     const testSubject = `Тестовый запрос ${new Date().toLocaleTimeString('ru-RU')}`;
     const [insertResult]: any = await dbPool.execute(
-      `INSERT INTO orders (subject, description, deadline, contact, source, status, created_at)
-       VALUES (?, 'Диагностика через /api/db/test', 'Срочно', '+7 (999) 000-00-00', 'website', 'new', NOW())`,
+      `INSERT INTO orders (client_id, subject, description, deadline, contact, source, status, terms_accepted, privacy_accepted, consent_accepted, agreements_accepted_at, guest_email, created_at)
+       VALUES (1, ?, 'Диагностика через /api/db/test', 'Срочно', '+7 (999) 000-00-00', 'website', 'new', 1, 1, 1, NOW(), 'test@bausquad.org', NOW())`,
       [testSubject]
     );
 
@@ -957,6 +1000,9 @@ app.post('/api/orders', async (req: Request, res: Response) => {
           }
         }
 
+        const finalClientId = numericClientId || 1; // Fallback to website_guest user (ID 1)
+        const guestEmailVal = user ? user.email : (contact.includes('@') ? contact.trim() : (contact.startsWith('+') || contact.startsWith('8') ? contact.trim() : null));
+
         try {
           const [insertResult]: any = await dbPool.execute(
             `INSERT INTO orders (
@@ -964,19 +1010,19 @@ app.post('/api/orders', async (req: Request, res: Response) => {
               terms_accepted, privacy_accepted, consent_accepted, agreements_accepted_at, guest_email, created_at
             ) VALUES (?, ?, ?, ?, ?, 'website', 'new', 1, 1, 1, NOW(), ?, NOW())`,
             [
-              numericClientId,
+              finalClientId,
               title.trim(),
               description.trim(),
               deadline || 'Не указан',
               contact.trim(),
-              user ? user.email : (contact.includes('@') ? contact.trim() : null)
+              guestEmailVal
             ]
           );
 
           if (insertResult && insertResult.insertId) {
             numericOrderId = insertResult.insertId;
             newOrder.id = String(insertResult.insertId);
-            console.log(`[MySQL Orders] Successfully inserted order into DB with order_id: ${numericOrderId}`);
+            console.log(`[MySQL Orders] Successfully inserted order into DB with order_id: ${numericOrderId} (agreements confirmed)`);
           }
         } catch (firstErr: any) {
           console.warn('[MySQL Order Insert] Full insert failed, attempting standard schema insert:', firstErr?.message || firstErr);
@@ -984,7 +1030,7 @@ app.post('/api/orders', async (req: Request, res: Response) => {
             `INSERT INTO orders (client_id, subject, description, deadline, contact, source, status, created_at)
              VALUES (?, ?, ?, ?, ?, 'website', 'new', NOW())`,
             [
-              numericClientId,
+              finalClientId,
               title.trim(),
               description.trim(),
               deadline || 'Не указан',

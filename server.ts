@@ -6,7 +6,9 @@ import fs from 'fs';
 const potentialEnvPaths = [
   path.resolve(process.cwd(), '.env'),
   path.resolve(process.cwd(), '..', '.env'),
-  '/home/bau7824897/bausquad.org/.env'
+  '/home/bau7824897/bausquad.org/.env',
+  path.join(__dirname, '.env'),
+  path.join(__dirname, '..', '.env')
 ];
 
 let loadedEnvPath = '';

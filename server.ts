@@ -1,3 +1,6 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import fs from 'fs';
@@ -236,7 +239,42 @@ const orders: DBOrder[] = [
 const verificationCodes: Map<string, DBVerificationCode> = new Map();
 const telegramLogs: Array<{ id: string; timestamp: string; text: string; files: string[] }> = [];
 
-// Live Telegram Notification Dispatcher via Bot API
+// Telegram Order Card Formatter (matching standard format)
+function getOrderText(data: {
+  order_id?: number | string;
+  user: {
+    first_name: string;
+    last_name?: string;
+    username?: string;
+  };
+  subject: string;
+  description: string;
+  deadline: string;
+  contact: string;
+}): string {
+  let order = data.order_id
+    ? `📋 <b>Заказ №${data.order_id}</b>\n\n`
+    : `📋 <b>Новый заказ</b>\n\n`;
+
+  const user = data.user;
+  const userText =
+    `👤 <b>Заказчик:</b>\n` +
+    `${user.first_name || 'Клиент'}` +
+    (user.last_name ? ` ${user.last_name}` : '') +
+    (user.username ? ` (@${user.username.replace(/^@/, '')})` : '') +
+    `\n\n`;
+
+  return (
+    order +
+    userText +
+    `📘 <b>Предмет:</b>\n${data.subject}\n\n` +
+    `📝 <b>Описание:</b>\n${data.description}\n\n` +
+    `⏰ <b>Срок:</b>\n${data.deadline || 'Не указан'}\n\n` +
+    `📞 <b>Контакты:</b>\n${data.contact}`
+  );
+}
+
+// Live Telegram Notification Dispatcher via Bot API (Sends card only)
 async function sendTelegramNotification(text: string, files: string[] = []) {
   const logEntry = {
     id: `tg-${Date.now()}`,
@@ -265,13 +303,13 @@ async function sendTelegramNotification(text: string, files: string[] = []) {
       if (!data.ok) {
         console.error('[Telegram Bot API Error]', data);
       } else {
-        console.log('[Telegram Bot API] Notification sent to chat:', chatId);
+        console.log('[Telegram Bot API] Order card sent to chat:', chatId);
       }
     } catch (err) {
       console.error('[Telegram Network Error]', err);
     }
   } else {
-    console.log('[Telegram Bot API] (Local log):', text);
+    console.log('[Telegram Bot API] (Local log):\n', text);
   }
 }
 
@@ -796,65 +834,65 @@ app.post('/api/orders', async (req: Request, res: Response) => {
       files: Array.isArray(files) ? files : []
     };
 
+    let numericOrderId: number | null = null;
+
     if (dbPool) {
       try {
         let numericClientId: number | null = null;
         if (user) {
-          const num = parseInt(user.id.replace(/\D/g, ''), 10);
-          numericClientId = !isNaN(num) && num > 0 ? num : null;
-        }
-
-        if (!numericClientId) {
-          // Find or create guest record in `users` table to get a valid client_id
-          const [existingGuestRows]: any = await dbPool.execute(
-            'SELECT id FROM users WHERE LOWER(email) = ? OR LOWER(contact) = ? LIMIT 1',
-            [contact.toLowerCase().trim(), contact.toLowerCase().trim()]
+          // Look up existing user's numeric ID in MySQL
+          const [userRows]: any = await dbPool.execute(
+            'SELECT id FROM users WHERE LOWER(email) = ? OR LOWER(login) = ? LIMIT 1',
+            [user.email.toLowerCase().trim(), user.username.toLowerCase().trim()]
           );
-
-          if (Array.isArray(existingGuestRows) && existingGuestRows.length > 0) {
-            numericClientId = existingGuestRows[0].id;
-          } else {
-            const guestLogin = `guest_${Date.now()}`;
-            const [res]: any = await dbPool.execute(
-              `INSERT INTO users (login, email, contact, role, account_status, is_verified, user_agreement, privacy_agreement, processing_personal_data_agreement, user_agreement_date, privacy_agreement_date, processing_personal_data_agreement_date, registration_date)
-               VALUES (?, ?, ?, 'user', 'active', 0, 1, 1, 1, NOW(), NOW(), NOW(), NOW())`,
-              [guestLogin, contact.trim(), contact.trim()]
-            );
-            numericClientId = res.insertId;
+          if (Array.isArray(userRows) && userRows.length > 0) {
+            numericClientId = userRows[0].id;
           }
         }
 
-        if (numericClientId) {
-          await dbPool.execute(
-            `INSERT INTO orders (client_id, subject, description, deadline, contact, source, status, created_at)
-             VALUES (?, ?, ?, ?, ?, 'website', 'new', NOW())`,
-            [
-              numericClientId,
-              title,
-              description,
-              deadline || 'Не указан',
-              contact
-            ]
-          );
+        const [insertResult]: any = await dbPool.execute(
+          `INSERT INTO orders (
+            client_id, subject, description, deadline, contact, source, status,
+            terms_accepted, privacy_accepted, consent_accepted, agreements_accepted_at, guest_email, created_at
+          ) VALUES (?, ?, ?, ?, ?, 'website', 'new', 1, 1, 1, NOW(), ?, NOW())`,
+          [
+            numericClientId,
+            title.trim(),
+            description.trim(),
+            deadline || 'Не указан',
+            contact.trim(),
+            user ? user.email : (contact.includes('@') ? contact.trim() : null)
+          ]
+        );
+
+        if (insertResult && insertResult.insertId) {
+          numericOrderId = insertResult.insertId;
+          newOrder.id = String(insertResult.insertId);
+          console.log(`[MySQL Orders] Successfully inserted order into DB with order_id: ${numericOrderId}`);
         }
-      } catch (dbErr) {
-        console.error('[MySQL Order Insert Error]', dbErr);
+      } catch (dbErr: any) {
+        console.error('[MySQL Order Insert Error]', dbErr?.message || dbErr);
       }
     }
 
     orders.unshift(newOrder);
 
-    // Format Telegram notification message
-    const isGuestStr = !user ? ' ГОСТЕВОЙ' : '';
-    const tgMessage = `📚 <b>Новый${isGuestStr} заказ #${newOrder.id}</b>\n\n` +
-      `<b>Предмет:</b> ${newOrder.title}\n` +
-      `<b>Описание:</b> ${newOrder.description}\n` +
-      `<b>Дедлайн:</b> ${newOrder.deadline}\n` +
-      `<b>Контакт:</b> ${newOrder.contact}\n` +
-      `<b>Клиент:</b> ${newOrder.user_username} (${newOrder.user_email})\n` +
-      (!user ? `<b>Соглашения с законами РФ приняты:</b> Да (Пользовательское, Конфиденциальность, Согласие ПД)\n` : '') +
-      `<b>Дата:</b> ${new Date(newOrder.created_at).toLocaleString('ru-RU')}\n` +
-      `<b>Файлов прикреплено:</b> ${newOrder.files.length}`;
+    // Format Telegram notification using exact user card format
+    const userFirstName = user ? user.username : 'Гость';
+    const userTgHandle = user?.telegram_handle || (contact.startsWith('@') ? contact.replace(/^@/, '') : undefined);
+
+    const tgMessage = getOrderText({
+      order_id: numericOrderId || newOrder.id.replace(/\D/g, '') || undefined,
+      user: {
+        first_name: userFirstName,
+        last_name: '',
+        username: userTgHandle
+      },
+      subject: newOrder.title,
+      description: newOrder.description,
+      deadline: newOrder.deadline,
+      contact: newOrder.contact
+    });
 
     await sendTelegramNotification(tgMessage, newOrder.files.map(f => f.name));
 

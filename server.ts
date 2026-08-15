@@ -1,18 +1,21 @@
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
-import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// Safely resolve directory path in both CJS and ESM environments
+const currentDir = typeof __dirname !== 'undefined'
+  ? __dirname
+  : (typeof import.meta !== 'undefined' && import.meta.url
+      ? path.dirname(new URL(import.meta.url).pathname)
+      : process.cwd());
 
 // Load .env from multiple candidate paths to ensure PM2 and CLI both find it
 const potentialEnvPaths = [
   path.resolve(process.cwd(), '.env'),
   path.resolve(process.cwd(), '..', '.env'),
-  '/home/bau7824897/bausquad.org/.env',
-  path.join(__dirname, '.env'),
-  path.join(__dirname, '..', '.env')
+  path.join(currentDir, '.env'),
+  path.join(currentDir, '..', '.env'),
+  '/home/bau7824897/bausquad.org/.env'
 ];
 
 let loadedEnvPath = '';

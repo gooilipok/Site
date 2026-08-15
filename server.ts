@@ -1,6 +1,10 @@
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Load .env from multiple candidate paths to ensure PM2 and CLI both find it
 const potentialEnvPaths = [
@@ -69,68 +73,56 @@ let dbStatus = {
 };
 
 // Initialize MySQL Database Pool if credentials provided
-const mysqlHost = process.env.MYSQL_HOST || 'bau7824897.mysql';
-const mysqlUser = process.env.MYSQL_USER;
-const mysqlPassword = process.env.MYSQL_PASSWORD;
-const mysqlDatabase = process.env.MYSQL_DATABASE;
-const mysqlPort = parseInt(process.env.MYSQL_PORT || '3306', 10);
+function initDatabasePool() {
+  const mysqlHost = process.env.MYSQL_HOST || 'mysql.hosting.nic.ru';
+  const mysqlUser = process.env.MYSQL_USER || 'bau7824897_mysql';
+  const mysqlPassword = process.env.MYSQL_PASSWORD || 'AhTFV6g/';
+  const mysqlDatabase = process.env.MYSQL_DATABASE || 'bau7824897_db';
+  const mysqlPort = parseInt(process.env.MYSQL_PORT || '3306', 10);
 
-if (mysqlUser && mysqlDatabase) {
-  try {
-    dbPool = mysql.createPool({
-      host: mysqlHost,
-      port: mysqlPort,
-      user: mysqlUser,
-      password: mysqlPassword,
-      database: mysqlDatabase,
-      waitForConnections: true,
-      connectionLimit: 10,
-      queueLimit: 0,
-      enableKeepAlive: true,
-      keepAliveInitialDelay: 10000
-    });
-    dbStatus.host = mysqlHost;
-    dbStatus.database = mysqlDatabase;
+  if (mysqlUser && mysqlDatabase) {
+    try {
+      dbPool = mysql.createPool({
+        host: mysqlHost,
+        port: mysqlPort,
+        user: mysqlUser,
+        password: mysqlPassword,
+        database: mysqlDatabase,
+        waitForConnections: true,
+        connectionLimit: 10,
+        queueLimit: 0,
+        connectTimeout: 20000,
+        enableKeepAlive: true,
+        keepAliveInitialDelay: 10000
+      });
+      dbStatus.host = mysqlHost;
+      dbStatus.database = mysqlDatabase;
 
-    // Perform live connection verification
-    dbPool.query('SELECT 1 as healthcheck')
-      .then(() => {
-        dbStatus.connected = true;
-        dbStatus.error = null;
-        dbStatus.lastChecked = new Date().toISOString();
-        console.log(`[MySQL] Connection established to ${mysqlHost}/${mysqlDatabase}`);
-      })
-      .catch((err: any) => {
-        dbStatus.connected = false;
-        dbStatus.error = err?.message || String(err);
-        dbStatus.lastChecked = new Date().toISOString();
-        console.error('[MySQL Connection Error]', err?.message || err);
-      });
-  } catch (err: any) {
-    dbStatus.connected = false;
-    dbStatus.error = err?.message || String(err);
-    console.error('[MySQL Pool Init Error]:', err);
+      // Perform live connection verification
+      dbPool.query('SELECT 1 as healthcheck')
+        .then(() => {
+          dbStatus.connected = true;
+          dbStatus.error = null;
+          dbStatus.lastChecked = new Date().toISOString();
+          console.log(`[MySQL] Connection established to ${mysqlHost}/${mysqlDatabase}`);
+        })
+        .catch((err: any) => {
+          dbStatus.connected = false;
+          dbStatus.error = err?.message || String(err);
+          dbStatus.lastChecked = new Date().toISOString();
+          console.error('[MySQL Connection Error]', err?.message || err);
+        });
+    } catch (err: any) {
+      dbStatus.connected = false;
+      dbStatus.error = err?.message || String(err);
+      console.error('[MySQL Pool Init Error]:', err);
+    }
+  } else {
+    console.warn('[MySQL] No MySQL credentials found in environment.');
   }
-} else if (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('mysql')) {
-  try {
-    dbPool = mysql.createPool(process.env.DATABASE_URL);
-    dbPool.query('SELECT 1 as healthcheck')
-      .then(() => {
-        dbStatus.connected = true;
-        dbStatus.error = null;
-        dbStatus.lastChecked = new Date().toISOString();
-      })
-      .catch((err: any) => {
-        dbStatus.connected = false;
-        dbStatus.error = err?.message || String(err);
-      });
-  } catch (err: any) {
-    dbStatus.connected = false;
-    dbStatus.error = err?.message || String(err);
-  }
-} else {
-  console.warn('[MySQL] No MySQL credentials found in environment.');
 }
+
+initDatabasePool();
 
 // Health check endpoints
 app.get(['/api/health', '/health', '/api/ping', '/ping'], async (req: Request, res: Response) => {

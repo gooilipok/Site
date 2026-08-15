@@ -1,9 +1,27 @@
 import dotenv from 'dotenv';
-dotenv.config();
-
-import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import fs from 'fs';
+
+// Load .env from multiple candidate paths to ensure PM2 and CLI both find it
+const potentialEnvPaths = [
+  path.resolve(process.cwd(), '.env'),
+  path.resolve(process.cwd(), '..', '.env'),
+  '/home/bau7824897/bausquad.org/.env'
+];
+
+let loadedEnvPath = '';
+for (const envPath of potentialEnvPaths) {
+  if (fs.existsSync(envPath)) {
+    dotenv.config({ path: envPath });
+    loadedEnvPath = envPath;
+    break;
+  }
+}
+if (!loadedEnvPath) {
+  dotenv.config();
+}
+
+import express, { Request, Response, NextFunction } from 'express';
 import { createServer as createViteServer } from 'vite';
 import mysql from 'mysql2/promise';
 import bcrypt from 'bcryptjs';
@@ -38,33 +56,17 @@ if (!fs.existsSync(uploadsDir)) {
 }
 app.use('/uploads', express.static(uploadsDir));
 
-// Health check endpoints
-app.get(['/api/health', '/health', '/api/ping', '/ping'], (req: Request, res: Response) => {
-  return res.json({
-    status: 'ok',
-    app: 'BauSquad',
-    timestamp: new Date().toISOString(),
-    mysql_connected: dbPool !== null
-  });
-});
-
-// Favicon handler
-app.get(['/favicon.ico', '/favicon.svg'], (req: Request, res: Response) => {
-  const logoPath = path.join(process.cwd(), 'public', 'logo.svg');
-  if (fs.existsSync(logoPath)) {
-    res.type('image/svg+xml').sendFile(logoPath);
-  } else {
-    res.status(204).end();
-  }
-});
-
-// Robots.txt handler
-app.get('/robots.txt', (req: Request, res: Response) => {
-  res.type('text/plain').send("User-agent: *\nAllow: /\n");
-});
+// Global DB Connection State
+let dbPool: mysql.Pool | null = null;
+let dbStatus = {
+  connected: false,
+  error: null as string | null,
+  database: process.env.MYSQL_DATABASE || null,
+  host: process.env.MYSQL_HOST || null,
+  lastChecked: null as string | null
+};
 
 // Initialize MySQL Database Pool if credentials provided
-let dbPool: mysql.Pool | null = null;
 if (process.env.MYSQL_HOST || process.env.DATABASE_URL) {
   try {
     if (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('mysql')) {
@@ -78,14 +80,64 @@ if (process.env.MYSQL_HOST || process.env.DATABASE_URL) {
         database: process.env.MYSQL_DATABASE,
         waitForConnections: true,
         connectionLimit: 10,
-        queueLimit: 0
+        queueLimit: 0,
+        enableKeepAlive: true,
+        keepAliveInitialDelay: 10000
       });
     }
-    console.log('[MySQL] Connection pool initialized');
-  } catch (err) {
-    console.error('[MySQL] Pool initialization failed:', err);
+
+    // Perform live connection verification
+    dbPool.query('SELECT 1 as healthcheck')
+      .then(() => {
+        dbStatus.connected = true;
+        dbStatus.error = null;
+        dbStatus.lastChecked = new Date().toISOString();
+        console.log(`[MySQL] Connection established to ${process.env.MYSQL_HOST}/${process.env.MYSQL_DATABASE}`);
+      })
+      .catch((err: any) => {
+        dbStatus.connected = false;
+        dbStatus.error = err?.message || String(err);
+        dbStatus.lastChecked = new Date().toISOString();
+        console.error('[MySQL Connection Error]', err?.message || err);
+      });
+  } catch (err: any) {
+    dbStatus.connected = false;
+    dbStatus.error = err?.message || String(err);
+    console.error('[MySQL Pool Init Error]:', err);
   }
+} else {
+  console.warn('[MySQL] No MYSQL_HOST or DATABASE_URL found in environment.');
 }
+
+// Health check endpoints
+app.get(['/api/health', '/health', '/api/ping', '/ping'], async (req: Request, res: Response) => {
+  if (dbPool) {
+    try {
+      await dbPool.query('SELECT 1');
+      dbStatus.connected = true;
+      dbStatus.error = null;
+    } catch (e: any) {
+      dbStatus.connected = false;
+      dbStatus.error = e?.message || String(e);
+    }
+  }
+  return res.json({
+    status: 'ok',
+    app: 'BauSquad',
+    timestamp: new Date().toISOString(),
+    env_loaded_from: loadedEnvPath || 'default/process.env',
+    mysql: {
+      connected: dbStatus.connected,
+      host: dbStatus.host,
+      database: dbStatus.database,
+      error: dbStatus.error
+    },
+    telegram: {
+      bot_token_set: Boolean(process.env.TELEGRAM_BOT_TOKEN),
+      chat_id_set: Boolean(process.env.TELEGRAM_ADMIN_CHAT_ID || process.env.TELEGRAM_CHAT_ID)
+    }
+  });
+});
 
 // Data models
 interface DBUser {
@@ -850,25 +902,45 @@ app.post('/api/orders', async (req: Request, res: Response) => {
           }
         }
 
-        const [insertResult]: any = await dbPool.execute(
-          `INSERT INTO orders (
-            client_id, subject, description, deadline, contact, source, status,
-            terms_accepted, privacy_accepted, consent_accepted, agreements_accepted_at, guest_email, created_at
-          ) VALUES (?, ?, ?, ?, ?, 'website', 'new', 1, 1, 1, NOW(), ?, NOW())`,
-          [
-            numericClientId,
-            title.trim(),
-            description.trim(),
-            deadline || 'Не указан',
-            contact.trim(),
-            user ? user.email : (contact.includes('@') ? contact.trim() : null)
-          ]
-        );
+        try {
+          const [insertResult]: any = await dbPool.execute(
+            `INSERT INTO orders (
+              client_id, subject, description, deadline, contact, source, status,
+              terms_accepted, privacy_accepted, consent_accepted, agreements_accepted_at, guest_email, created_at
+            ) VALUES (?, ?, ?, ?, ?, 'website', 'new', 1, 1, 1, NOW(), ?, NOW())`,
+            [
+              numericClientId,
+              title.trim(),
+              description.trim(),
+              deadline || 'Не указан',
+              contact.trim(),
+              user ? user.email : (contact.includes('@') ? contact.trim() : null)
+            ]
+          );
 
-        if (insertResult && insertResult.insertId) {
-          numericOrderId = insertResult.insertId;
-          newOrder.id = String(insertResult.insertId);
-          console.log(`[MySQL Orders] Successfully inserted order into DB with order_id: ${numericOrderId}`);
+          if (insertResult && insertResult.insertId) {
+            numericOrderId = insertResult.insertId;
+            newOrder.id = String(insertResult.insertId);
+            console.log(`[MySQL Orders] Successfully inserted order into DB with order_id: ${numericOrderId}`);
+          }
+        } catch (firstErr: any) {
+          console.warn('[MySQL Order Insert] Full insert failed, attempting standard schema insert:', firstErr?.message || firstErr);
+          const [fallbackResult]: any = await dbPool.execute(
+            `INSERT INTO orders (client_id, subject, description, deadline, contact, source, status, created_at)
+             VALUES (?, ?, ?, ?, ?, 'website', 'new', NOW())`,
+            [
+              numericClientId,
+              title.trim(),
+              description.trim(),
+              deadline || 'Не указан',
+              contact.trim()
+            ]
+          );
+          if (fallbackResult && fallbackResult.insertId) {
+            numericOrderId = fallbackResult.insertId;
+            newOrder.id = String(fallbackResult.insertId);
+            console.log(`[MySQL Orders] Fallback inserted order with order_id: ${numericOrderId}`);
+          }
         }
       } catch (dbErr: any) {
         console.error('[MySQL Order Insert Error]', dbErr?.message || dbErr);

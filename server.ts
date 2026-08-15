@@ -67,24 +67,28 @@ let dbStatus = {
 };
 
 // Initialize MySQL Database Pool if credentials provided
-if (process.env.MYSQL_HOST || process.env.DATABASE_URL) {
+const mysqlHost = process.env.MYSQL_HOST || 'bau7824897.mysql';
+const mysqlUser = process.env.MYSQL_USER;
+const mysqlPassword = process.env.MYSQL_PASSWORD;
+const mysqlDatabase = process.env.MYSQL_DATABASE;
+const mysqlPort = parseInt(process.env.MYSQL_PORT || '3306', 10);
+
+if (mysqlUser && mysqlDatabase) {
   try {
-    if (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('mysql')) {
-      dbPool = mysql.createPool(process.env.DATABASE_URL);
-    } else {
-      dbPool = mysql.createPool({
-        host: process.env.MYSQL_HOST || 'localhost',
-        port: parseInt(process.env.MYSQL_PORT || '3306', 10),
-        user: process.env.MYSQL_USER,
-        password: process.env.MYSQL_PASSWORD,
-        database: process.env.MYSQL_DATABASE,
-        waitForConnections: true,
-        connectionLimit: 10,
-        queueLimit: 0,
-        enableKeepAlive: true,
-        keepAliveInitialDelay: 10000
-      });
-    }
+    dbPool = mysql.createPool({
+      host: mysqlHost,
+      port: mysqlPort,
+      user: mysqlUser,
+      password: mysqlPassword,
+      database: mysqlDatabase,
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0,
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 10000
+    });
+    dbStatus.host = mysqlHost;
+    dbStatus.database = mysqlDatabase;
 
     // Perform live connection verification
     dbPool.query('SELECT 1 as healthcheck')
@@ -92,7 +96,7 @@ if (process.env.MYSQL_HOST || process.env.DATABASE_URL) {
         dbStatus.connected = true;
         dbStatus.error = null;
         dbStatus.lastChecked = new Date().toISOString();
-        console.log(`[MySQL] Connection established to ${process.env.MYSQL_HOST}/${process.env.MYSQL_DATABASE}`);
+        console.log(`[MySQL] Connection established to ${mysqlHost}/${mysqlDatabase}`);
       })
       .catch((err: any) => {
         dbStatus.connected = false;
@@ -105,8 +109,25 @@ if (process.env.MYSQL_HOST || process.env.DATABASE_URL) {
     dbStatus.error = err?.message || String(err);
     console.error('[MySQL Pool Init Error]:', err);
   }
+} else if (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('mysql')) {
+  try {
+    dbPool = mysql.createPool(process.env.DATABASE_URL);
+    dbPool.query('SELECT 1 as healthcheck')
+      .then(() => {
+        dbStatus.connected = true;
+        dbStatus.error = null;
+        dbStatus.lastChecked = new Date().toISOString();
+      })
+      .catch((err: any) => {
+        dbStatus.connected = false;
+        dbStatus.error = err?.message || String(err);
+      });
+  } catch (err: any) {
+    dbStatus.connected = false;
+    dbStatus.error = err?.message || String(err);
+  }
 } else {
-  console.warn('[MySQL] No MYSQL_HOST or DATABASE_URL found in environment.');
+  console.warn('[MySQL] No MySQL credentials found in environment.');
 }
 
 // Health check endpoints

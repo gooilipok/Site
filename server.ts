@@ -200,6 +200,71 @@ app.get(['/api/health', '/health', '/api/ping', '/ping'], async (req: Request, r
   });
 });
 
+// Telegram diagnostics and live test endpoint
+app.get(['/api/telegram/test', '/api/tg/test'], async (req: Request, res: Response) => {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_ADMIN_CHAT_ID || process.env.TELEGRAM_CHAT_ID;
+
+  if (!token || !chatId) {
+    return res.status(400).json({
+      success: false,
+      error: 'TELEGRAM_BOT_TOKEN или TELEGRAM_ADMIN_CHAT_ID не заданы в .env',
+      token_set: Boolean(token),
+      chat_id_set: Boolean(chatId)
+    });
+  }
+
+  const testText = `🤖 <b>Тестовое сообщение от BauSquad</b>\n\n` +
+    `✅ Проверка связи с сервером успешно выполнена!\n` +
+    `⏰ Время: ${new Date().toLocaleString('ru-RU')}`;
+
+  const endpoints = [
+    `https://api.telegram.org/bot${token}/sendMessage`,
+    // If blocked, fallback to alternate mirror if configured
+    process.env.TELEGRAM_API_PROXY ? `${process.env.TELEGRAM_API_PROXY.replace(/\/$/, '')}/bot${token}/sendMessage` : null
+  ].filter(Boolean);
+
+  const results: any[] = [];
+
+  for (const url of endpoints) {
+    try {
+      const resp = await fetch(url as string, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: testText,
+          parse_mode: 'HTML'
+        }),
+        signal: AbortSignal.timeout(10000)
+      });
+      const data = await resp.json();
+      results.push({ url, status: resp.status, ok: resp.ok, data });
+      if (resp.ok && data.ok) {
+        return res.json({
+          success: true,
+          message: 'Сообщение успешно доставлено в Telegram!',
+          chat_id: chatId,
+          response: data,
+          details: results
+        });
+      }
+    } catch (err: any) {
+      results.push({
+        url,
+        error: err?.message || String(err),
+        code: err?.code || err?.cause?.code
+      });
+    }
+  }
+
+  return res.status(500).json({
+    success: false,
+    error: 'Не удалось отправить сообщение в Telegram',
+    attempts: results
+  });
+});
+
 // Database diagnostics and live test endpoint
 app.get('/api/db/test', async (req: Request, res: Response) => {
   if (!dbPool) {
@@ -439,27 +504,41 @@ async function sendTelegramNotification(text: string, files: string[] = []) {
   const chatId = process.env.TELEGRAM_ADMIN_CHAT_ID || process.env.TELEGRAM_CHAT_ID;
 
   if (token && chatId) {
-    try {
-      const resp = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text,
-          parse_mode: 'HTML'
-        })
-      });
-      const data = await resp.json();
-      if (!data.ok) {
-        console.error('[Telegram Bot API Error]', data);
-      } else {
-        console.log('[Telegram Bot API] Order card sent to chat:', chatId);
+    const urls = [
+      `https://api.telegram.org/bot${token}/sendMessage`,
+      process.env.TELEGRAM_API_PROXY ? `${process.env.TELEGRAM_API_PROXY.replace(/\/$/, '')}/bot${token}/sendMessage` : null
+    ].filter(Boolean);
+
+    let sent = false;
+    for (const url of urls) {
+      try {
+        const resp = await fetch(url as string, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text,
+            parse_mode: 'HTML'
+          }),
+          signal: AbortSignal.timeout(10000)
+        });
+        const data = await resp.json();
+        if (!data.ok) {
+          console.error(`[Telegram Bot API Error from ${url}]`, data);
+        } else {
+          console.log(`[Telegram Bot API] Order card sent to chat ${chatId} via ${url}`);
+          sent = true;
+          break;
+        }
+      } catch (err: any) {
+        console.error(`[Telegram Network Error from ${url}]:`, err?.message || err);
       }
-    } catch (err) {
-      console.error('[Telegram Network Error]', err);
+    }
+    if (!sent) {
+      console.warn('[Telegram Bot API] All endpoints failed to send message.');
     }
   } else {
-    console.log('[Telegram Bot API] (Local log):\n', text);
+    console.log('[Telegram Bot API] (Token/ChatId missing, Local log):\n', text);
   }
 }
 

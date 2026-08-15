@@ -1,13 +1,9 @@
 import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import mysql from 'mysql2/promise';
 import bcrypt from 'bcryptjs';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;

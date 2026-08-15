@@ -157,6 +157,43 @@ app.get(['/api/health', '/health', '/api/ping', '/ping'], async (req: Request, r
   });
 });
 
+// Database diagnostics and live test endpoint
+app.get('/api/db/test', async (req: Request, res: Response) => {
+  if (!dbPool) {
+    return res.status(500).json({ success: false, error: 'dbPool is not initialized', dbStatus });
+  }
+  try {
+    const [tables]: any = await dbPool.query('SHOW TABLES');
+    const [ordersCount]: any = await dbPool.query('SELECT COUNT(*) as count FROM orders');
+    const [recentOrders]: any = await dbPool.query('SELECT order_id, client_id, subject, status, created_at FROM orders ORDER BY order_id DESC LIMIT 5');
+
+    // Test a dummy insertion into orders
+    const testSubject = `Тестовый запрос ${new Date().toLocaleTimeString('ru-RU')}`;
+    const [insertResult]: any = await dbPool.execute(
+      `INSERT INTO orders (subject, description, deadline, contact, source, status, created_at)
+       VALUES (?, 'Диагностика через /api/db/test', 'Срочно', '+7 (999) 000-00-00', 'website', 'new', NOW())`,
+      [testSubject]
+    );
+
+    return res.json({
+      success: true,
+      tables,
+      orders_count: ordersCount?.[0]?.count ?? 0,
+      recent_orders: recentOrders,
+      test_insert_id: insertResult?.insertId,
+      message: 'Запись в базу данных успешно выполнена!'
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      success: false,
+      error: err?.message || String(err),
+      code: err?.code,
+      sqlState: err?.sqlState,
+      sqlMessage: err?.sqlMessage
+    });
+  }
+});
+
 // Data models
 interface DBUser {
   id: string;

@@ -26,12 +26,43 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
+// Setup static files and public directory
+const publicDir = path.join(process.cwd(), 'public');
+if (fs.existsSync(publicDir)) {
+  app.use(express.static(publicDir));
+}
+
 // Setup file uploads directory
 const uploadsDir = path.join(process.cwd(), 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 app.use('/uploads', express.static(uploadsDir));
+
+// Health check endpoints
+app.get(['/api/health', '/health', '/api/ping', '/ping'], (req: Request, res: Response) => {
+  return res.json({
+    status: 'ok',
+    app: 'BauSquad',
+    timestamp: new Date().toISOString(),
+    mysql_connected: dbPool !== null
+  });
+});
+
+// Favicon handler
+app.get(['/favicon.ico', '/favicon.svg'], (req: Request, res: Response) => {
+  const logoPath = path.join(process.cwd(), 'public', 'logo.svg');
+  if (fs.existsSync(logoPath)) {
+    res.type('image/svg+xml').sendFile(logoPath);
+  } else {
+    res.status(204).end();
+  }
+});
+
+// Robots.txt handler
+app.get('/robots.txt', (req: Request, res: Response) => {
+  res.type('text/plain').send("User-agent: *\nAllow: /\n");
+});
 
 // Initialize MySQL Database Pool if credentials provided
 let dbPool: mysql.Pool | null = null;
@@ -605,13 +636,16 @@ app.post('/api/auth/refresh', (req: Request, res: Response) => {
 });
 
 // 5. AUTH: Get Current User Profile
-app.get('/api/auth/me', authenticateUser, (req: Request, res: Response) => {
+app.get(['/api/auth/me', '/api/profile', '/api/user/me', '/api/me'], authenticateUser, (req: Request, res: Response) => {
   const user = (req as any).user as DBUser;
   return res.json({ user: sanitizeUser(user) });
 });
 
 // 6. PROFILE: Update User Profile
-app.put('/api/profile', authenticateUser, async (req: Request, res: Response) => {
+app.all(['/api/profile', '/api/user/profile'], authenticateUser, async (req: Request, res: Response, next: NextFunction) => {
+  if (req.method !== 'PUT' && req.method !== 'POST' && req.method !== 'PATCH') {
+    return next();
+  }
   const user = (req as any).user as DBUser;
   const { username, new_password, telegram_handle } = req.body;
 
@@ -1158,10 +1192,25 @@ async function startServer() {
   } else {
     const docsPath = path.join(process.cwd(), 'docs');
     const distPath = path.join(process.cwd(), 'dist');
-    const staticPath = fs.existsSync(docsPath) ? docsPath : distPath;
+    const staticPath = fs.existsSync(path.join(docsPath, 'index.html'))
+      ? docsPath
+      : (fs.existsSync(path.join(distPath, 'index.html')) ? distPath : docsPath);
+    
     app.use(express.static(staticPath));
+    if (fs.existsSync(docsPath) && staticPath !== docsPath) {
+      app.use(express.static(docsPath));
+    }
+    if (fs.existsSync(distPath) && staticPath !== distPath) {
+      app.use(express.static(distPath));
+    }
+
     app.get('*', (req: Request, res: Response) => {
-      res.sendFile(path.join(staticPath, 'index.html'));
+      const targetIndex = path.join(staticPath, 'index.html');
+      if (fs.existsSync(targetIndex)) {
+        res.sendFile(targetIndex);
+      } else {
+        res.sendFile(path.join(process.cwd(), 'index.html'));
+      }
     });
   }
 

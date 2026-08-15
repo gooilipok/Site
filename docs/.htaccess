@@ -1,0 +1,9 @@
+RewriteEngine On
+
+# 1. Proxy API requests to Node.js backend running on port 3000
+RewriteRule ^api/(.*)$ http://127.0.0.1:3000/api/$1 [P,L]
+
+# 2. SPA Fallback for static frontend routes
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.html [L]

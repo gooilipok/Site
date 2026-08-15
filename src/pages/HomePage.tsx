@@ -1,17 +1,27 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ShieldCheck, Clock, Award, Cpu, CheckCircle2, FileUp, Settings2, RefreshCw, BookOpen, Cog } from 'lucide-react';
-import { CncDroDisplay } from '../components/CncDroDisplay';
+import { CncDroDisplay, WORK_TYPES, COMPLEXITIES } from '../components/CncDroDisplay';
 import { StudentFunWidget } from '../components/StudentFunWidget';
+import { EmergencySafetyButton } from '../components/EmergencySafetyButton';
 
 export const HomePage: React.FC = () => {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
 
+  // Synchronized state for CNC regulators and Student stress controls
+  const [xIndex, setXIndex] = useState<number>(1); // 0 = 'Задача', 1 = 'Типовое ДЗ'
+  const [yIndex, setYIndex] = useState<number>(1); // 4 = 'Критически тяжёлое'
+  const [panicLevel, setPanicLevel] = useState<number>(45); // Target: 88
+  const [coffeeCount, setCoffeeCount] = useState<number>(0); // Target: 39
+
   const handleCreateOrderClick = (presetTopic?: string) => {
     navigate('/order/create', { state: { presetTopic } });
   };
+
+  const currentWorkType = WORK_TYPES[xIndex] || 'Задача';
+  const currentComplexity = COMPLEXITIES[yIndex] || 'Критически тяжёлое';
 
   return (
     <div className="relative overflow-hidden">
@@ -60,12 +70,23 @@ export const HomePage: React.FC = () => {
 
       {/* 🖥️ CNC DRO DISPLAY WIDGET (УЦИ - Устройство Цифровой Индикации) */}
       <section className="px-4">
-        <CncDroDisplay />
+        <CncDroDisplay 
+          xIndex={xIndex}
+          yIndex={yIndex}
+          onChangeX={setXIndex}
+          onChangeY={setYIndex}
+        />
       </section>
 
       {/* ☕ STUDENT FUN STRESS-RELIEVER WIDGET */}
       <section className="max-w-5xl mx-auto px-4">
-        <StudentFunWidget onCreateOrder={() => handleCreateOrderClick()} />
+        <StudentFunWidget 
+          onCreateOrder={() => handleCreateOrderClick()}
+          panicLevel={panicLevel}
+          coffeeCount={coffeeCount}
+          onChangePanic={setPanicLevel}
+          onChangeCoffee={setCoffeeCount}
+        />
       </section>
 
       {/* 📦 INFO CARDS GRID */}
@@ -184,7 +205,18 @@ export const HomePage: React.FC = () => {
         </div>
       </section>
 
+      {/* 🛑 EMERGENCY STOP BUTTON (ПОД ПРОЦЕССОМ ВЫПОЛНЕНИЯ ЗАКАЗА) */}
+      <section className="max-w-7xl mx-auto px-4 pb-12">
+        <EmergencySafetyButton 
+          regulator1={currentWorkType}
+          regulator2={currentComplexity}
+          panicLevel={panicLevel}
+          coffeeCount={coffeeCount}
+        />
+      </section>
+
     </div>
   );
 };
+
 

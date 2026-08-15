@@ -1654,6 +1654,34 @@ app.post('/api/upload', (req: Request, res: Response) => {
   });
 });
 
+// SERVE STATIC UPLOADS, ERRORS AND ROOT ASSETS
+const uploadsPath = path.join(process.cwd(), 'uploads');
+if (fs.existsSync(uploadsPath)) {
+  app.use('/uploads', express.static(uploadsPath));
+}
+
+const errorsPath = path.join(process.cwd(), 'errors');
+if (fs.existsSync(errorsPath)) {
+  app.use('/errors', express.static(errorsPath));
+}
+
+// Serve root alarm audio files
+app.get('/alarm.wav', (req: Request, res: Response) => {
+  const filePath = path.join(process.cwd(), 'alarm.wav');
+  if (fs.existsSync(filePath)) {
+    return res.sendFile(filePath);
+  }
+  return res.status(404).send('Audio file not found');
+});
+
+app.get('/alarm.mp3', (req: Request, res: Response) => {
+  const filePath = path.join(process.cwd(), 'alarm.mp3');
+  if (fs.existsSync(filePath)) {
+    return res.sendFile(filePath);
+  }
+  return res.status(404).send('Audio file not found');
+});
+
 // CATCH-ALL FOR UNMATCHED API ROUTES (returns JSON 404)
 app.all('/api/*', (req: Request, res: Response) => {
   console.warn(`[404 API Not Found] ${req.method} ${req.originalUrl}`);
@@ -1662,33 +1690,42 @@ app.all('/api/*', (req: Request, res: Response) => {
   });
 });
 
-// VITE MIDDLEWARE SETUP
+// VITE & STATIC SPA MIDDLEWARE SETUP
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
+    // Development mode with Vite HMR/middleware
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa'
     });
     app.use(vite.middlewares);
+
+    // SPA fallback in development mode
+    app.get('*', async (req: Request, res: Response, next) => {
+      if (req.originalUrl.startsWith('/api')) return next();
+      try {
+        const url = req.originalUrl;
+        let template = fs.readFileSync(path.join(process.cwd(), 'index.html'), 'utf-8');
+        template = await vite.transformIndexHtml(url, template);
+        res.status(200).set({ 'Content-Type': 'text/html' }).end(template);
+      } catch (e: any) {
+        vite.ssrFixStacktrace(e as Error);
+        next(e);
+      }
+    });
   } else {
-    const docsPath = path.join(process.cwd(), 'docs');
+    // Production mode: Serve dist built SPA
     const distPath = path.join(process.cwd(), 'dist');
-    const staticPath = fs.existsSync(path.join(docsPath, 'index.html'))
-      ? docsPath
-      : (fs.existsSync(path.join(distPath, 'index.html')) ? distPath : docsPath);
-    
-    app.use(express.static(staticPath));
-    if (fs.existsSync(docsPath) && staticPath !== docsPath) {
-      app.use(express.static(docsPath));
-    }
-    if (fs.existsSync(distPath) && staticPath !== distPath) {
-      app.use(express.static(distPath));
+    if (fs.existsSync(distPath)) {
+      app.use(express.static(distPath, { maxAge: '1d' }));
     }
 
-    app.get('*', (req: Request, res: Response) => {
-      const targetIndex = path.join(staticPath, 'index.html');
-      if (fs.existsSync(targetIndex)) {
-        res.sendFile(targetIndex);
+    // SPA fallback: Send dist/index.html for any subpage navigation
+    app.get('*', (req: Request, res: Response, next) => {
+      if (req.originalUrl.startsWith('/api')) return next();
+      const distIndex = path.join(distPath, 'index.html');
+      if (fs.existsSync(distIndex)) {
+        res.sendFile(distIndex);
       } else {
         res.sendFile(path.join(process.cwd(), 'index.html'));
       }

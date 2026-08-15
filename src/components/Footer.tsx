@@ -54,13 +54,13 @@ export const Footer: React.FC = () => {
             Удобный официальный Телеграм-бот для оперативных консультаций, вопросов по проектам и быстрой связи с нашей инженерной командой.
           </p>
           <a
-            href="https://t.me/bausquad_bot"
+            href="https://t.me/BauSquadBot"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 px-4 py-2 bg-[#2b3d4f] border border-[#3498db] text-[#3498db] hover:bg-[#3498db] hover:text-white font-bold text-xs uppercase transition-all shadow-md"
           >
             <Send className="w-4 h-4" />
-            <span>Открыть @bausquad_bot</span>
+            <span>Открыть @BauSquadBot</span>
             <ExternalLink className="w-3 h-3 ml-1" />
           </a>
         </div>

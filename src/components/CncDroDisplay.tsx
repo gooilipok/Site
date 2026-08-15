@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import { Cpu, RotateCcw, Clock, Sliders, ChevronLeft, ChevronRight, Activity, ShieldCheck, Sparkles } from 'lucide-react';
 
-const WORK_TYPES = [
+export const WORK_TYPES = [
   'Задача',
   'Типовое ДЗ',
   'Курсовая работа',
   'Дипломная работа'
 ];
 
-const COMPLEXITIES = [
+export const COMPLEXITIES = [
   'Примитивное',
   'Базовое',
   'Повышенное',
@@ -28,9 +28,24 @@ const DEADLINE_MATRIX: string[][] = [
   ['1–2 недели', '2–3 недели', '3–4 недели', '1–2 месяца', '2–3 месяца']
 ];
 
-export const CncDroDisplay: React.FC = () => {
-  const [xIndex, setXIndex] = useState<number>(1); // Default: Типовое ДЗ
-  const [yIndex, setYIndex] = useState<number>(1); // Default: Базовое
+interface CncDroDisplayProps {
+  xIndex?: number;
+  yIndex?: number;
+  onChangeX?: (index: number) => void;
+  onChangeY?: (index: number) => void;
+}
+
+export const CncDroDisplay: React.FC<CncDroDisplayProps> = ({
+  xIndex: controlledX,
+  yIndex: controlledY,
+  onChangeX,
+  onChangeY
+}) => {
+  const [internalX, setInternalX] = useState<number>(1); // Default: Типовое ДЗ
+  const [internalY, setInternalY] = useState<number>(1); // Default: Базовое
+
+  const xIndex = controlledX !== undefined ? controlledX : internalX;
+  const yIndex = controlledY !== undefined ? controlledY : internalY;
 
   // Angle calculations for the rotary knobs
   // Knob X (4 steps): -75deg to +75deg
@@ -41,15 +56,25 @@ export const CncDroDisplay: React.FC = () => {
 
   const currentDeadline = DEADLINE_MATRIX[xIndex][yIndex];
 
-  const handleNextX = () => setXIndex(prev => (prev + 1) % WORK_TYPES.length);
-  const handlePrevX = () => setXIndex(prev => (prev - 1 + WORK_TYPES.length) % WORK_TYPES.length);
+  const setX = (val: number) => {
+    if (onChangeX) onChangeX(val);
+    else setInternalX(val);
+  };
 
-  const handleNextY = () => setYIndex(prev => (prev + 1) % COMPLEXITIES.length);
-  const handlePrevY = () => setYIndex(prev => (prev - 1 + COMPLEXITIES.length) % COMPLEXITIES.length);
+  const setY = (val: number) => {
+    if (onChangeY) onChangeY(val);
+    else setInternalY(val);
+  };
+
+  const handleNextX = () => setX((xIndex + 1) % WORK_TYPES.length);
+  const handlePrevX = () => setX((xIndex - 1 + WORK_TYPES.length) % WORK_TYPES.length);
+
+  const handleNextY = () => setY((yIndex + 1) % COMPLEXITIES.length);
+  const handlePrevY = () => setY((yIndex - 1 + COMPLEXITIES.length) % COMPLEXITIES.length);
 
   const resetAll = () => {
-    setXIndex(0);
-    setYIndex(0);
+    setX(0);
+    setY(0);
   };
 
   return (

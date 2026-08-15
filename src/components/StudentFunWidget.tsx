@@ -40,11 +40,42 @@ const TIER3_EXCUSES = [
   "«Пространственно-временной континуум свернулся в бублик прямо над моим рабочим столом»"
 ];
 
-export const StudentFunWidget: React.FC<{ onCreateOrder: () => void }> = ({ onCreateOrder }) => {
-  const [panicLevel, setPanicLevel] = useState<number>(45);
-  const [coffeeCount, setCoffeeCount] = useState<number>(0);
+interface StudentFunWidgetProps {
+  onCreateOrder: () => void;
+  panicLevel?: number;
+  coffeeCount?: number;
+  onChangePanic?: (val: number) => void;
+  onChangeCoffee?: (val: number) => void;
+}
+
+export const StudentFunWidget: React.FC<StudentFunWidgetProps> = ({
+  onCreateOrder,
+  panicLevel: controlledPanic,
+  coffeeCount: controlledCoffee,
+  onChangePanic,
+  onChangeCoffee
+}) => {
+  const [internalPanic, setInternalPanic] = useState<number>(45);
+  const [internalCoffee, setInternalCoffee] = useState<number>(0);
   const [currentExcuse, setCurrentExcuse] = useState<string>(TIER1_EXCUSES[0]);
   const [calculatedAdvice, setCalculatedAdvice] = useState<string | null>(null);
+
+  const panicLevel = controlledPanic !== undefined ? controlledPanic : internalPanic;
+  const coffeeCount = controlledCoffee !== undefined ? controlledCoffee : internalCoffee;
+
+  const setPanic = (val: number) => {
+    const clamped = Math.max(0, Math.min(100, val));
+    if (onChangePanic) onChangePanic(clamped);
+    else setInternalPanic(clamped);
+    generateExcuse(clamped, coffeeCount);
+  };
+
+  const setCoffee = (val: number) => {
+    const clamped = Math.max(0, val);
+    if (onChangeCoffee) onChangeCoffee(clamped);
+    else setInternalCoffee(clamped);
+    generateExcuse(panicLevel, clamped);
+  };
 
   // Classic panic level ranges
   const getPanicStatus = (level: number) => {
@@ -61,9 +92,7 @@ export const StudentFunWidget: React.FC<{ onCreateOrder: () => void }> = ({ onCr
   };
 
   const handleCoffeeClick = () => {
-    const newCoffee = coffeeCount + 1;
-    setCoffeeCount(newCoffee);
-    generateExcuse(panicLevel, newCoffee);
+    setCoffee(coffeeCount + 1);
   };
 
   const generateExcuse = (currentPanic: number, currentCoffee: number) => {
@@ -122,9 +151,17 @@ export const StudentFunWidget: React.FC<{ onCreateOrder: () => void }> = ({ onCr
                 <Flame className="w-4 h-4 text-[#e74c3c]" />
                 Уровень паники
               </span>
-              <span className={`text-xs font-bold ${status.color}`}>
-                {panicLevel}%
-              </span>
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={panicLevel}
+                  onChange={(e) => setPanic(Number(e.target.value))}
+                  className={`w-14 px-1.5 py-0.5 bg-[#1a252f] border border-white/20 text-xs font-bold font-mono text-center ${status.color} focus:outline-none focus:border-[#c5a059]`}
+                />
+                <span className="text-xs text-[#bdc3c7] font-mono">%</span>
+              </div>
             </div>
 
             <input
@@ -132,11 +169,7 @@ export const StudentFunWidget: React.FC<{ onCreateOrder: () => void }> = ({ onCr
               min="0"
               max="100"
               value={panicLevel}
-              onChange={(e) => {
-                const val = Number(e.target.value);
-                setPanicLevel(val);
-                generateExcuse(val, coffeeCount);
-              }}
+              onChange={(e) => setPanic(Number(e.target.value))}
               className="w-full h-2 bg-[#2b3d4f] rounded-lg appearance-none cursor-pointer accent-[#c5a059]"
             />
 
@@ -162,21 +195,46 @@ export const StudentFunWidget: React.FC<{ onCreateOrder: () => void }> = ({ onCr
               Кофейный Симулятор
             </span>
 
-            <div className="text-4xl font-black text-white font-mono my-2 drop-shadow-[0_0_10px_rgba(197,160,89,0.5)]">
-              ☕ {coffeeCount}
+            <div className="flex items-center justify-center gap-2 my-2">
+              <input
+                type="number"
+                min="0"
+                value={coffeeCount}
+                onChange={(e) => setCoffee(Number(e.target.value))}
+                className="w-20 text-3xl font-black text-center text-white bg-transparent border-b-2 border-[#c5a059] font-mono drop-shadow-[0_0_10px_rgba(197,160,89,0.5)] focus:outline-none"
+              />
+              <span className="text-2xl">☕</span>
             </div>
             <p className="text-[11px] text-[#bdc3c7]">
               Чашек кофе выпито во время попыток написать работу самостоятельно
             </p>
           </div>
 
-          <button
-            onClick={handleCoffeeClick}
-            className="w-full py-2.5 bg-[#2b3d4f] hover:bg-[#3d536b] text-[#c5a059] border border-[#c5a059] font-bold uppercase text-xs transition-all flex items-center justify-center gap-2"
-          >
-            <Coffee className="w-4 h-4" />
-            <span>+1 Чашка кофе</span>
-          </button>
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setCoffee(Math.max(0, coffeeCount - 1))}
+                className="px-2.5 py-1.5 bg-[#1a252f] hover:bg-[#2b3d4f] text-[#bdc3c7] border border-[#3d4e5f] font-mono text-xs font-bold"
+                title="Убавить 1 чашку"
+              >
+                -1
+              </button>
+              <button
+                onClick={handleCoffeeClick}
+                className="flex-1 py-1.5 bg-[#2b3d4f] hover:bg-[#3d536b] text-[#c5a059] border border-[#c5a059] font-bold uppercase text-xs transition-all flex items-center justify-center gap-1.5"
+              >
+                <Coffee className="w-3.5 h-3.5" />
+                <span>+1 Чашка</span>
+              </button>
+              <button
+                onClick={() => setCoffee(coffeeCount + 10)}
+                className="px-2.5 py-1.5 bg-[#1a252f] hover:bg-[#2b3d4f] text-[#f1c40f] border border-[#3d4e5f] font-mono text-xs font-bold"
+                title="Добавить сразу 10 чашек"
+              >
+                +10
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Module 3: Excuse Generator */}

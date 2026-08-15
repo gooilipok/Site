@@ -5,7 +5,7 @@ import { Order, OrderStatus } from '../types';
 import { User as UserIcon, Mail, Shield, Calendar, Edit3, PlusCircle, CheckCircle2, Clock, XCircle, AlertCircle, FileText, Download, LogOut, Settings, Ban, Send, MessageSquare, ArrowLeft } from 'lucide-react';
 
 export const ProfilePage: React.FC = () => {
-  const { user, tokens, logout, updateProfile, toggleDemoRole } = useAuth();
+  const { user, tokens, logout, updateProfile } = useAuth();
   const navigate = useNavigate();
 
   const [orders, setOrders] = useState<Order[]>([]);
@@ -267,7 +267,7 @@ export const ProfilePage: React.FC = () => {
             )}
 
             <p className="text-[11px] text-[#bdc3c7]">
-              Привязка Telegram аккаунта необходима для моментального получения статусов заказов и быстрой связи с автором. Наш бот: <a href="https://t.me/bausquad_bot" target="_blank" rel="noopener noreferrer" className="text-[#3498db] underline font-bold">@bausquad_bot</a>
+              Привязка Telegram аккаунта необходима для моментального получения статусов заказов и быстрой связи с автором. Наш бот: <a href="https://t.me/BauSquadBot" target="_blank" rel="noopener noreferrer" className="text-[#3498db] underline font-bold">@BauSquadBot</a>
             </p>
           </form>
         </div>

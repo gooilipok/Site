@@ -669,10 +669,10 @@ function verifyPassword(plainPassword: string, storedHash: string | null | undef
 
 // SMTP Mailer Transport Creator
 function getMailTransporter() {
-  const host = process.env.SMTP_HOST || 'smtp.gmail.com';
-  const port = parseInt(process.env.SMTP_PORT || '587', 10);
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASSWORD || process.env.SMTP_PASS;
+  const host = process.env.SMTP_HOST || process.env.SMTP_SERVER || 'mail.nic.ru';
+  const port = parseInt(process.env.SMTP_PORT || '465', 10);
+  const user = process.env.SMTP_USER || process.env.SMTP_EMAIL || 'bausquadresponse@bausquad.org';
+  const pass = process.env.SMTP_PASSWORD || process.env.SMTP_PASS || 'I*D8J2{W51zG(a^f';
 
   if (!user || !pass) {
     return null;
@@ -681,7 +681,7 @@ function getMailTransporter() {
   return nodemailer.createTransport({
     host,
     port,
-    secure: port === 465, // true for 465, false for 587 / 25
+    secure: port === 465, // true for 465 SSL, false for 587 STARTTLS
     auth: {
       user,
       pass
@@ -700,7 +700,7 @@ async function sendEmailNotification(to: string, subject: string, htmlContent: s
     return { success: false, error: 'SMTP настройки (SMTP_USER / SMTP_PASSWORD) не заданы в .env' };
   }
 
-  const from = process.env.SMTP_FROM || `BauSquad <${process.env.SMTP_USER}>`;
+  const from = process.env.SMTP_FROM || `BauSquad <${process.env.SMTP_USER || process.env.SMTP_EMAIL || 'bausquadresponse@bausquad.org'}>`;
 
   try {
     const info = await transporter.sendMail({

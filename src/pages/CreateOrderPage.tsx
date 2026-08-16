@@ -62,6 +62,15 @@ export const CreateOrderPage: React.FC = () => {
     setFilePreviews(prev => prev.filter((_, i) => i !== index));
   };
 
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = (err) => reject(err);
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -87,13 +96,35 @@ export const CreateOrderPage: React.FC = () => {
     setLoading(true);
 
     try {
+      // Convert all selected files to base64 payload
+      const encodedFiles = await Promise.all(
+        selectedFiles.map(async (file) => {
+          try {
+            const dataUrl = await fileToBase64(file);
+            return {
+              name: file.name,
+              size: file.size,
+              type: file.type || 'application/octet-stream',
+              data: dataUrl
+            };
+          } catch (fileErr) {
+            console.error('[File Read Error]', file.name, fileErr);
+            return {
+              name: file.name,
+              size: file.size,
+              type: file.type || 'application/octet-stream'
+            };
+          }
+        })
+      );
+
       const payload = {
         title,
         description,
         deadline,
         price: 'На обсуждении',
         contact,
-        files: filePreviews,
+        files: encodedFiles,
         terms_accepted: isAuthenticated ? true : termsAccepted,
         privacy_accepted: isAuthenticated ? true : privacyAccepted,
         consent_accepted: isAuthenticated ? true : consentAccepted,

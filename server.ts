@@ -561,57 +561,237 @@ function getOrderText(data: {
   );
 }
 
-// Live Telegram Notification Dispatcher via Bot API (Sends card only)
-async function sendTelegramNotification(text: string, files: string[] = []) {
+interface TelegramFileAttachment {
+  name: string;
+  type: string;
+  buffer: Buffer;
+  isPhoto: boolean;
+}
+
+function isPhotoAttachment(filename: string, mimeType: string): boolean {
+  const ext = path.extname(filename).toLowerCase();
+  if (['.svg', '.psd', '.ai', '.eps', '.tiff', '.tif', '.raw'].includes(ext)) {
+    return false;
+  }
+  if (mimeType && mimeType.startsWith('image/')) {
+    return true;
+  }
+  return ['.jpg', '.jpeg', '.png', '.webp', '.bmp'].includes(ext);
+}
+
+// Live Telegram Notification Dispatcher via Bot API
+// Photos are sent as a collage/media group with the main order message attached
+// Documents follow immediately as a separate message
+async function sendTelegramOrderNotification(
+  text: string,
+  attachments: TelegramFileAttachment[] = [],
+  orderId?: string | number
+) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_ADMIN_CHAT_ID || process.env.TELEGRAM_CHAT_ID;
+
   const logEntry = {
     id: `tg-${Date.now()}`,
     timestamp: new Date().toISOString(),
     text,
-    files
+    files: attachments.map(a => a.name)
   };
   telegramLogs.unshift(logEntry);
   if (telegramLogs.length > 50) telegramLogs.pop();
 
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_ADMIN_CHAT_ID || process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) {
+    console.log('[Telegram Bot API] (Token/ChatId missing, Local log):\n', text, '\nAttachments:', attachments.map(a => a.name));
+    return;
+  }
 
-  if (token && chatId) {
-    const urls = [
-      `https://api.telegram.org/bot${token}/sendMessage`,
-      process.env.TELEGRAM_API_PROXY ? `${process.env.TELEGRAM_API_PROXY.replace(/\/$/, '')}/bot${token}/sendMessage` : null
-    ].filter(Boolean);
+  const baseUrls = [
+    'https://api.telegram.org',
+    process.env.TELEGRAM_API_PROXY ? process.env.TELEGRAM_API_PROXY.replace(/\/$/, '') : null
+  ].filter(Boolean) as string[];
 
-    let sent = false;
-    for (const url of urls) {
+  const photoAttachments = attachments.filter(a => a.isPhoto);
+  const documentAttachments = attachments.filter(a => !a.isPhoto);
+
+  // Helper to send a request across available base URLs (supports proxy fallback)
+  const sendTelegramRequest = async (endpoint: string, body: any, isFormData: boolean = false) => {
+    for (const baseUrl of baseUrls) {
+      const url = `${baseUrl}/bot${token}/${endpoint}`;
       try {
-        const resp = await fetch(url as string, {
+        const resp = await fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text,
-            parse_mode: 'HTML'
-          }),
-          signal: AbortSignal.timeout(10000)
+          headers: isFormData ? undefined : { 'Content-Type': 'application/json' },
+          body: isFormData ? body : JSON.stringify(body),
+          signal: AbortSignal.timeout(25000)
         });
         const data = await resp.json();
-        if (!data.ok) {
-          console.error(`[Telegram Bot API Error from ${url}]`, data);
+        if (data.ok) {
+          return { ok: true, data };
         } else {
-          console.log(`[Telegram Bot API] Order card sent to chat ${chatId} via ${url}`);
-          sent = true;
-          break;
+          console.error(`[Telegram Bot API ${endpoint} Error from ${url}]`, data);
         }
       } catch (err: any) {
-        console.error(`[Telegram Network Error from ${url}]:`, err?.message || err);
+        console.error(`[Telegram Network Error for ${endpoint} from ${url}]:`, err?.message || err);
       }
     }
-    if (!sent) {
-      console.warn('[Telegram Bot API] All endpoints failed to send message.');
+    return { ok: false };
+  };
+
+  // 1. Send Main Order Message & Photos (Collage / Photo / Text)
+  try {
+    if (photoAttachments.length === 0) {
+      // No photos: send text message card
+      await sendTelegramRequest('sendMessage', {
+        chat_id: chatId,
+        text,
+        parse_mode: 'HTML'
+      });
+    } else if (photoAttachments.length === 1) {
+      // Single photo
+      const photo = photoAttachments[0];
+      if (text.length <= 1024) {
+        const formData = new FormData();
+        formData.append('chat_id', String(chatId));
+        formData.append('caption', text);
+        formData.append('parse_mode', 'HTML');
+        const blob = new Blob([photo.buffer], { type: photo.type || 'image/jpeg' });
+        formData.append('photo', blob, photo.name);
+        const res = await sendTelegramRequest('sendPhoto', formData, true);
+        if (!res.ok) {
+          await sendTelegramRequest('sendMessage', { chat_id: chatId, text, parse_mode: 'HTML' });
+        }
+      } else {
+        await sendTelegramRequest('sendMessage', { chat_id: chatId, text, parse_mode: 'HTML' });
+        const formData = new FormData();
+        formData.append('chat_id', String(chatId));
+        formData.append('caption', `📸 <b>Фото к заказу #${orderId || ''}</b>`);
+        formData.append('parse_mode', 'HTML');
+        const blob = new Blob([photo.buffer], { type: photo.type || 'image/jpeg' });
+        formData.append('photo', blob, photo.name);
+        await sendTelegramRequest('sendPhoto', formData, true);
+      }
+    } else {
+      // Multiple photos: send as a COLLAGE (sendMediaGroup)
+      const isCaptionInMedia = text.length <= 1024;
+      if (!isCaptionInMedia) {
+        await sendTelegramRequest('sendMessage', { chat_id: chatId, text, parse_mode: 'HTML' });
+      }
+
+      const photoChunks: TelegramFileAttachment[][] = [];
+      for (let i = 0; i < photoAttachments.length; i += 10) {
+        photoChunks.push(photoAttachments.slice(i, i + 10));
+      }
+
+      for (let chunkIdx = 0; chunkIdx < photoChunks.length; chunkIdx++) {
+        const chunk = photoChunks[chunkIdx];
+        const formData = new FormData();
+        formData.append('chat_id', String(chatId));
+
+        const mediaGroup = chunk.map((p, idx) => {
+          const mediaItem: any = {
+            type: 'photo',
+            media: `attach://photo_${chunkIdx}_${idx}`
+          };
+          if (chunkIdx === 0 && idx === 0) {
+            if (isCaptionInMedia) {
+              mediaItem.caption = text;
+              mediaItem.parse_mode = 'HTML';
+            } else {
+              mediaItem.caption = `📸 <b>Фотографии к заказу #${orderId || ''}</b> (${photoAttachments.length} шт.)`;
+              mediaItem.parse_mode = 'HTML';
+            }
+          }
+          return mediaItem;
+        });
+
+        formData.append('media', JSON.stringify(mediaGroup));
+        chunk.forEach((p, idx) => {
+          const blob = new Blob([p.buffer], { type: p.type || 'image/jpeg' });
+          formData.append(`photo_${chunkIdx}_${idx}`, blob, p.name);
+        });
+
+        const res = await sendTelegramRequest('sendMediaGroup', formData, true);
+        if (!res.ok) {
+          // Fallback: send photos individually if media group is rejected
+          for (const p of chunk) {
+            const singleForm = new FormData();
+            singleForm.append('chat_id', String(chatId));
+            const b = new Blob([p.buffer], { type: p.type || 'image/jpeg' });
+            singleForm.append('photo', b, p.name);
+            await sendTelegramRequest('sendPhoto', singleForm, true);
+          }
+        }
+      }
     }
-  } else {
-    console.log('[Telegram Bot API] (Token/ChatId missing, Local log):\n', text);
+  } catch (photoErr) {
+    console.error('[Telegram Photo Dispatch Error]', photoErr);
   }
+
+  // 2. Send Documents as Follow-up Message ("Все документы должны присылаться вслед вторым сообщением")
+  if (documentAttachments.length > 0) {
+    try {
+      if (documentAttachments.length === 1) {
+        const doc = documentAttachments[0];
+        const formData = new FormData();
+        formData.append('chat_id', String(chatId));
+        formData.append('caption', `📎 <b>Документ к заказу #${orderId || ''}:</b>\n${doc.name}`);
+        formData.append('parse_mode', 'HTML');
+        const blob = new Blob([doc.buffer], { type: doc.type || 'application/octet-stream' });
+        formData.append('document', blob, doc.name);
+        await sendTelegramRequest('sendDocument', formData, true);
+      } else {
+        // Group multiple documents together
+        const docChunks: TelegramFileAttachment[][] = [];
+        for (let i = 0; i < documentAttachments.length; i += 10) {
+          docChunks.push(documentAttachments.slice(i, i + 10));
+        }
+
+        for (let chunkIdx = 0; chunkIdx < docChunks.length; chunkIdx++) {
+          const chunk = docChunks[chunkIdx];
+          const formData = new FormData();
+          formData.append('chat_id', String(chatId));
+
+          const mediaGroup = chunk.map((d, idx) => {
+            const mediaItem: any = {
+              type: 'document',
+              media: `attach://doc_${chunkIdx}_${idx}`
+            };
+            if (chunkIdx === 0 && idx === 0) {
+              mediaItem.caption = `📎 <b>Документы к заказу #${orderId || ''}</b> (${documentAttachments.length} шт.)`;
+              mediaItem.parse_mode = 'HTML';
+            }
+            return mediaItem;
+          });
+
+          formData.append('media', JSON.stringify(mediaGroup));
+          chunk.forEach((d, idx) => {
+            const blob = new Blob([d.buffer], { type: d.type || 'application/octet-stream' });
+            formData.append(`doc_${chunkIdx}_${idx}`, blob, d.name);
+          });
+
+          const res = await sendTelegramRequest('sendMediaGroup', formData, true);
+          if (!res.ok) {
+            // Fallback: send documents individually
+            for (const d of chunk) {
+              const singleForm = new FormData();
+              singleForm.append('chat_id', String(chatId));
+              singleForm.append('caption', `📎 <b>Документ:</b> ${d.name}`);
+              singleForm.append('parse_mode', 'HTML');
+              const b = new Blob([d.buffer], { type: d.type || 'application/octet-stream' });
+              singleForm.append('document', b, d.name);
+              await sendTelegramRequest('sendDocument', singleForm, true);
+            }
+          }
+        }
+      }
+    } catch (docErr) {
+      console.error('[Telegram Document Dispatch Error]', docErr);
+    }
+  }
+}
+
+// Backward-compatible wrapper for simple text notifications
+async function sendTelegramNotification(text: string, files: string[] = []) {
+  return sendTelegramOrderNotification(text, [], undefined);
 }
 
 // Universal Password Verifier supporting Bcrypt, MD5, SHA256, SHA512, Django/PBKDF2 and Plaintext
@@ -1234,6 +1414,63 @@ app.post('/api/orders', async (req: Request, res: Response) => {
       }
     }
 
+    // Process attached files payload & decode base64 if present
+    const processedFiles: DBOrderFile[] = [];
+    const telegramAttachments: TelegramFileAttachment[] = [];
+
+    if (Array.isArray(files) && files.length > 0) {
+      for (let idx = 0; idx < files.length; idx++) {
+        const fileItem = files[idx];
+        const rawName = String(fileItem.name || `file_${idx + 1}`).trim();
+        const safeName = rawName.replace(/[^a-zA-Z0-9._\-\u0400-\u04FF]/g, '_');
+        const mimeType = String(fileItem.type || 'application/octet-stream');
+
+        let fileBuffer: Buffer | null = null;
+
+        if (fileItem.data && typeof fileItem.data === 'string') {
+          try {
+            const matches = fileItem.data.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+            const base64Content = matches ? matches[2] : fileItem.data;
+            fileBuffer = Buffer.from(base64Content, 'base64');
+          } catch (b64Err) {
+            console.error('[Base64 Decode Error]', rawName, b64Err);
+          }
+        }
+
+        const isPhoto = isPhotoAttachment(safeName, mimeType);
+        let fileUrl = fileItem.url || '';
+
+        if (fileBuffer) {
+          const timestamp = Date.now();
+          const diskFilename = `ord_${timestamp}_${idx}_${safeName}`;
+          const diskPath = path.join(uploadsDir, diskFilename);
+
+          try {
+            fs.writeFileSync(diskPath, fileBuffer);
+            fileUrl = `/uploads/${diskFilename}`;
+          } catch (writeErr) {
+            console.error('[File Save to Disk Error]', diskFilename, writeErr);
+          }
+
+          telegramAttachments.push({
+            name: rawName,
+            type: mimeType,
+            buffer: fileBuffer,
+            isPhoto
+          });
+        }
+
+        processedFiles.push({
+          id: fileItem.id || `file-${Date.now()}-${idx}`,
+          name: rawName,
+          size: fileItem.size || (fileBuffer ? fileBuffer.length : 0),
+          type: mimeType,
+          url: fileUrl,
+          uploaded_at: fileItem.uploaded_at || new Date().toISOString()
+        });
+      }
+    }
+
     const newOrder: DBOrder = {
       id: `ord-${Math.floor(1000 + Math.random() * 9000)}`,
       title,
@@ -1255,7 +1492,7 @@ app.post('/api/orders', async (req: Request, res: Response) => {
         consent_accepted: true,
         agreements_accepted_at: new Date().toISOString()
       } : undefined,
-      files: Array.isArray(files) ? files : []
+      files: processedFiles
     };
 
     let numericOrderId: number | null = null;
@@ -1341,7 +1578,8 @@ app.post('/api/orders', async (req: Request, res: Response) => {
       contact: newOrder.contact
     });
 
-    await sendTelegramNotification(tgMessage, newOrder.files.map(f => f.name));
+    // Send Telegram notification with photos in a collage and documents as a follow-up
+    await sendTelegramOrderNotification(tgMessage, telegramAttachments, numericOrderId || newOrder.id.replace(/\D/g, ''));
 
     return res.json({
       message: 'Заказ успешно создан и отправлен в BauSquad',

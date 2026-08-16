@@ -98,7 +98,6 @@ export const HomePage: React.FC = () => {
               <Award className="w-6 h-6" />
             </div>
             <h3 className="text-xl font-bold text-white uppercase mb-3 flex items-center justify-center gap-2 text-center w-full">
-              <span>📐</span>
               <span>Качество и Профессионализм</span>
             </h3>
             <p className="text-sm text-[#bdc3c7] leading-relaxed text-center">
@@ -111,11 +110,10 @@ export const HomePage: React.FC = () => {
               <Clock className="w-6 h-6" />
             </div>
             <h3 className="text-xl font-bold text-white uppercase mb-3 flex items-center justify-center gap-2 text-center w-full">
-              <span>⏰</span>
               <span>Соблюдение Сроков</span>
             </h3>
             <p className="text-sm text-[#bdc3c7] leading-relaxed text-center">
-              Мы ценим ваше время. 98.1% заказов сдаются раньше намеченного дедлайна. Ваша учеба находится под полным контролем нашей квалифицированной команды.
+              Мы ценим ваше время. 98.1% заказов сдаются ощутимо раньше намеченного дедлайна. Ваша учеба находится под полным контролем нашей квалифицированной команды.
             </p>
           </div>
 
@@ -124,7 +122,6 @@ export const HomePage: React.FC = () => {
               <ShieldCheck className="w-6 h-6" />
             </div>
             <h3 className="text-xl font-bold text-white uppercase mb-3 flex items-center justify-center gap-2 text-center w-full">
-              <span>🔒</span>
               <span>Полная Анонимность</span>
             </h3>
             <p className="text-sm text-[#bdc3c7] leading-relaxed text-center">
@@ -164,7 +161,7 @@ export const HomePage: React.FC = () => {
               <span className="text-3xl font-black text-[#c5a059]/30 absolute top-3 right-3 font-mono">01</span>
               <FileUp className="w-8 h-8 text-[#c5a059] mb-3" />
               <h4 className="font-bold text-white uppercase text-sm mb-1 text-center">Подача заявки</h4>
-              <p className="text-xs text-[#bdc3c7] text-center">Укажите предмет, описание задачи, дедлайн и прикрепите файлы методических указаний.</p>
+              <p className="text-xs text-[#bdc3c7] text-center">Укажите предмет, описание задачи, дедлайн и прикрепите необходимые файлы и фото.</p>
             </div>
 
             {/* Step 2 */}
@@ -172,7 +169,7 @@ export const HomePage: React.FC = () => {
               <span className="text-3xl font-black text-[#c5a059]/30 absolute top-3 right-3 font-mono">02</span>
               <RefreshCw className="w-8 h-8 text-[#3498db] mb-3" />
               <h4 className="font-bold text-white uppercase text-sm mb-1 text-center">Быстрая оценка задач</h4>
-              <p className="text-xs text-[#bdc3c7] text-center">Заказ мгновенно передается автору соответствующего профильного направления.</p>
+              <p className="text-xs text-[#bdc3c7] text-center">Заказ передаётся администрации, которая свяжется с вами для уточнений и выберет наиболее квалифицированного исполнителя.</p>
             </div>
 
             {/* Step 3 */}
@@ -188,7 +185,7 @@ export const HomePage: React.FC = () => {
               <span className="text-3xl font-black text-[#c5a059]/30 absolute top-3 right-3 font-mono">04</span>
               <CheckCircle2 className="w-8 h-8 text-[#2ecc71] mb-3" />
               <h4 className="font-bold text-white uppercase text-sm mb-1 text-center">Контроль качества и Выдача</h4>
-              <p className="text-xs text-[#bdc3c7] text-center">Двухуровневая проверка результатов. Вы скачиваете готовый результат в личном кабинете.</p>
+              <p className="text-xs text-[#bdc3c7] text-center">Двухуровневая проверка результатов. Вы получаете качественно выполненную работу, готовую к сдаче.</p>
             </div>
 
           </div>

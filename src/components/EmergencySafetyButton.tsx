@@ -43,67 +43,26 @@ export const EmergencySafetyButton: React.FC<EmergencySafetyButtonProps> = ({
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Audio candidates to try in order (supports mp3, wav, ogg, m4a, webm)
-  const audioCandidates = ['/alarm.mp3', '/alarm.wav', '/alarm.ogg', '/alarm.m4a', '/alarm.webm'];
-  const candidateIndexRef = useRef<number>(0);
-
-  // Initialize and load audio with fallback support across formats
-  const initAudio = (index = 0) => {
-    if (audioRef.current) {
-      try {
-        audioRef.current.pause();
-        audioRef.current.src = '';
-      } catch (e) {}
-    }
-
-    if (index >= audioCandidates.length) {
-      // If none of the files exist, do not produce any harsh sounds
-      audioRef.current = null;
-      return;
-    }
-
-    const src = audioCandidates[index];
-    candidateIndexRef.current = index;
-    const audio = new Audio(src);
-    audio.loop = true;
-    audio.preload = 'auto';
-
-    // If this specific format fails to load, try next candidate
-    audio.addEventListener('error', () => {
-      console.warn(`[Audio] Could not load ${src}, trying next format...`);
-      initAudio(index + 1);
-    });
-
-    audioRef.current = audio;
-  };
-
-  // Play audio safely without any screeching oscillators
+  // Direct and robust /alarm.mp3 playback
   const playAlarmSound = () => {
     if (soundMuted) return;
 
-    if (!audioRef.current) {
-      initAudio(0);
-    }
-
-    if (audioRef.current) {
-      try {
-        audioRef.current.currentTime = 0;
-        const playPromise = audioRef.current.play();
-        if (playPromise !== undefined) {
-          playPromise.catch((err) => {
-            console.warn('[Audio Play]', err);
-            // If play was rejected due to format error, try next candidate
-            if (candidateIndexRef.current < audioCandidates.length - 1) {
-              initAudio(candidateIndexRef.current + 1);
-              if (audioRef.current && !soundMuted) {
-                audioRef.current.play().catch(() => {});
-              }
-            }
-          });
-        }
-      } catch (err) {
-        console.warn('[Audio Play Exception]', err);
+    try {
+      if (!audioRef.current) {
+        const audio = new Audio('/alarm.mp3');
+        audio.loop = true;
+        audioRef.current = audio;
       }
+      
+      audioRef.current.currentTime = 0;
+      const playPromise = audioRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((err) => {
+          console.warn('[Audio Play /alarm.mp3]', err);
+        });
+      }
+    } catch (err) {
+      console.warn('[Audio Exception]', err);
     }
   };
 
@@ -128,8 +87,13 @@ export const EmergencySafetyButton: React.FC<EmergencySafetyButtonProps> = ({
   };
 
   useEffect(() => {
-    // Preload first candidate audio on mount
-    initAudio(0);
+    // Preload /alarm.mp3
+    try {
+      const audio = new Audio('/alarm.mp3');
+      audio.loop = true;
+      audio.preload = 'auto';
+      audioRef.current = audio;
+    } catch (e) {}
 
     return () => {
       stopAlarmSound();

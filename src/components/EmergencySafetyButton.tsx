@@ -42,92 +42,67 @@ export const EmergencySafetyButton: React.FC<EmergencySafetyButtonProps> = ({
   const [soundMuted, setSoundMuted] = useState<boolean>(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const synthOscillatorsRef = useRef<OscillatorNode[]>([]);
 
-  // Web Audio API Synthesizer fallback for reliable siren alarm
-  const startSynthSiren = () => {
-    try {
-      if (soundMuted) return;
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      audioContextRef.current = ctx;
+  // Audio candidates to try in order (supports mp3, wav, ogg, m4a, webm)
+  const audioCandidates = ['/alarm.mp3', '/alarm.wav', '/alarm.ogg', '/alarm.m4a', '/alarm.webm'];
+  const candidateIndexRef = useRef<number>(0);
 
-      const osc1 = ctx.createOscillator();
-      const osc2 = ctx.createOscillator();
-      const gainNode = ctx.createGain();
-
-      osc1.type = 'sawtooth';
-      osc2.type = 'square';
-
-      const now = ctx.currentTime;
-      osc1.frequency.setValueAtTime(600, now);
-      osc2.frequency.setValueAtTime(900, now);
-
-      const lfo = ctx.createOscillator();
-      lfo.frequency.value = 0.85; // 0.85 Hz siren sweep
-      const lfoGain = ctx.createGain();
-      lfoGain.gain.value = 250;
-
-      lfo.connect(osc1.frequency);
-      lfo.connect(osc2.frequency);
-
-      gainNode.gain.setValueAtTime(0.2, now);
-
-      osc1.connect(gainNode);
-      osc2.connect(gainNode);
-      gainNode.connect(ctx.destination);
-
-      lfo.start();
-      osc1.start();
-      osc2.start();
-
-      synthOscillatorsRef.current = [osc1, osc2, lfo];
-    } catch (err) {
-      console.warn('[Web Audio Alarm]', err);
+  // Initialize and load audio with fallback support across formats
+  const initAudio = (index = 0) => {
+    if (audioRef.current) {
+      try {
+        audioRef.current.pause();
+        audioRef.current.src = '';
+      } catch (e) {}
     }
+
+    if (index >= audioCandidates.length) {
+      // If none of the files exist, do not produce any harsh sounds
+      audioRef.current = null;
+      return;
+    }
+
+    const src = audioCandidates[index];
+    candidateIndexRef.current = index;
+    const audio = new Audio(src);
+    audio.loop = true;
+    audio.preload = 'auto';
+
+    // If this specific format fails to load, try next candidate
+    audio.addEventListener('error', () => {
+      console.warn(`[Audio] Could not load ${src}, trying next format...`);
+      initAudio(index + 1);
+    });
+
+    audioRef.current = audio;
   };
 
-  const stopSynthSiren = () => {
-    try {
-      synthOscillatorsRef.current.forEach(osc => {
-        try { 
-          osc.stop(); 
-          osc.disconnect(); 
-        } catch (e) {}
-      });
-      synthOscillatorsRef.current = [];
-      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-        audioContextRef.current.close().catch(() => {});
-        audioContextRef.current = null;
-      }
-    } catch (err) {
-      console.warn('[Stop Synth]', err);
-    }
-  };
-
-  // Play audio file or fallback to synth
+  // Play audio safely without any screeching oscillators
   const playAlarmSound = () => {
     if (soundMuted) return;
 
-    try {
-      if (!audioRef.current) {
-        audioRef.current = new Audio('/alarm.wav');
-        audioRef.current.loop = true;
-      }
-      audioRef.current.currentTime = 0;
-      const promise = audioRef.current.play();
-      if (promise !== undefined) {
-        promise.catch(() => {
-          if (!soundMuted) {
-            startSynthSiren();
-          }
-        });
-      }
-    } catch (e) {
-      if (!soundMuted) {
-        startSynthSiren();
+    if (!audioRef.current) {
+      initAudio(0);
+    }
+
+    if (audioRef.current) {
+      try {
+        audioRef.current.currentTime = 0;
+        const playPromise = audioRef.current.play();
+        if (playPromise !== undefined) {
+          playPromise.catch((err) => {
+            console.warn('[Audio Play]', err);
+            // If play was rejected due to format error, try next candidate
+            if (candidateIndexRef.current < audioCandidates.length - 1) {
+              initAudio(candidateIndexRef.current + 1);
+              if (audioRef.current && !soundMuted) {
+                audioRef.current.play().catch(() => {});
+              }
+            }
+          });
+        }
+      } catch (err) {
+        console.warn('[Audio Play Exception]', err);
       }
     }
   };
@@ -139,7 +114,6 @@ export const EmergencySafetyButton: React.FC<EmergencySafetyButtonProps> = ({
         audioRef.current.currentTime = 0;
       }
     } catch (e) {}
-    stopSynthSiren();
   };
 
   // Effect to react to soundMuted changes
@@ -154,6 +128,9 @@ export const EmergencySafetyButton: React.FC<EmergencySafetyButtonProps> = ({
   };
 
   useEffect(() => {
+    // Preload first candidate audio on mount
+    initAudio(0);
+
     return () => {
       stopAlarmSound();
     };

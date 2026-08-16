@@ -145,11 +145,11 @@ export const EmergencySafetyButton: React.FC<EmergencySafetyButtonProps> = ({
         <div className="mb-6 p-4 bg-gradient-to-r from-red-950 via-red-600 to-red-950 border-4 border-yellow-400 text-white shadow-[0_0_50px_rgba(231,76,60,0.8)] text-center animate-bounce">
           <div className="flex items-center justify-center gap-3 text-lg sm:text-2xl font-black font-mono tracking-widest uppercase text-yellow-300">
             <Siren className="w-8 h-8 animate-spin" />
-            <span>⚠️ КРИТИЧЕСКИЙ РЕЖИМ АКТИВИРОВАН! БРИГАДА BAUSQUAD В ПУТИ! ⚠️</span>
+            <span>⚠️ CODE ROT! KOMMUNIKATIONSKANAL WIEDER GEÖFFNET! ⚠️</span>
             <Siren className="w-8 h-8 animate-spin" />
           </div>
           <p className="text-xs font-mono font-bold mt-1 text-white uppercase tracking-wider">
-            ВСЕ РЕЗЕРВЫ АВТОРОВ МОБИЛИЗОВАНЫ // СКОРОСТЬ ВЫПОЛНЕНИЯ ПОВЫШЕНА ДО СВЕРХЗВУКОВОЙ
+            ALLE RESERVEN MOBILISIEREN // GÖTTERDÄMMERUNG LOOMS
           </p>
         </div>
       )}
@@ -359,7 +359,7 @@ export const EmergencySafetyButton: React.FC<EmergencySafetyButtonProps> = ({
                   className="px-3.5 py-1.5 bg-red-900/80 hover:bg-red-800 text-white text-[11px] font-bold uppercase font-mono border border-red-500/50 flex items-center gap-1.5 shadow-md active:scale-95 transition-all"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Сирена сброшена</span>
+                  <span>Emergency Lock</span>
                 </button>
               </div>
             )}
@@ -510,12 +510,12 @@ export const EmergencySafetyButton: React.FC<EmergencySafetyButtonProps> = ({
                     className="px-4 py-2 bg-gradient-to-r from-red-600 to-yellow-500 text-black font-black text-xs font-mono uppercase tracking-wider hover:brightness-110 shadow-lg flex items-center gap-2"
                   >
                     <RotateCcw className="w-4 h-4" />
-                    <span>Повернуть для сброса (Rotate to Reset)</span>
+                    <span>Срочное закрытие канала связи (Emergency Close)</span>
                   </button>
                 ) : (
                   <p className="text-[11px] font-mono text-[#8a9ba8]">
                     {isAllUnlocked 
-                      ? '⚠️ Режим разблокирован. Откройте крышку и активируйте кнопку.' 
+                      ? '⚠️ (нем.) Канал связи разблокирован. Активировать только в безвыходных ситуациях.' 
                       : '🔒 Механизм заблокирован.'}
                   </p>
                 )}

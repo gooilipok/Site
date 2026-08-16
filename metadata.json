@@ -1,6 +1,6 @@
 {
   "name": "BauSquad",
-  "description": "Инженерная платформа для заказа и выполнения студенческих работ с Telegram бота и панелью администратора",
+  "description": "Платформа для заказа и выполнения студенческих работ с Telegram бота и панелью администратора",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

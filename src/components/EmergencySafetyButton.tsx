@@ -48,6 +48,7 @@ export const EmergencySafetyButton: React.FC<EmergencySafetyButtonProps> = ({
   // Web Audio API Synthesizer fallback for reliable siren alarm
   const startSynthSiren = () => {
     try {
+      if (soundMuted) return;
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioCtx) return;
       const ctx = new AudioCtx();
@@ -91,11 +92,14 @@ export const EmergencySafetyButton: React.FC<EmergencySafetyButtonProps> = ({
   const stopSynthSiren = () => {
     try {
       synthOscillatorsRef.current.forEach(osc => {
-        try { osc.stop(); osc.disconnect(); } catch (e) {}
+        try { 
+          osc.stop(); 
+          osc.disconnect(); 
+        } catch (e) {}
       });
       synthOscillatorsRef.current = [];
-      if (audioContextRef.current) {
-        audioContextRef.current.close();
+      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+        audioContextRef.current.close().catch(() => {});
         audioContextRef.current = null;
       }
     } catch (err) {
@@ -116,20 +120,37 @@ export const EmergencySafetyButton: React.FC<EmergencySafetyButtonProps> = ({
       const promise = audioRef.current.play();
       if (promise !== undefined) {
         promise.catch(() => {
-          startSynthSiren();
+          if (!soundMuted) {
+            startSynthSiren();
+          }
         });
       }
     } catch (e) {
-      startSynthSiren();
+      if (!soundMuted) {
+        startSynthSiren();
+      }
     }
   };
 
   const stopAlarmSound = () => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-    }
+    try {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
+    } catch (e) {}
     stopSynthSiren();
+  };
+
+  // Effect to react to soundMuted changes
+  const toggleSoundMute = () => {
+    const nextMuted = !soundMuted;
+    setSoundMuted(nextMuted);
+    if (nextMuted) {
+      stopAlarmSound();
+    } else if (isAlarmActive) {
+      playAlarmSound();
+    }
   };
 
   useEffect(() => {
@@ -272,7 +293,7 @@ export const EmergencySafetyButton: React.FC<EmergencySafetyButtonProps> = ({
           {/* Sound Mute Toggle Button */}
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setSoundMuted(!soundMuted)}
+              onClick={toggleSoundMute}
               className="p-2 bg-[#141920] hover:bg-[#202833] border border-white/15 text-[#bdc3c7] text-xs font-mono shadow-md transition-all active:scale-95"
               title={soundMuted ? "Включить звук" : "Выключить звук"}
             >

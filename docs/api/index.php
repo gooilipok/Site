@@ -503,20 +503,26 @@ if ($path === '/orders' && $method === 'POST') {
         $orderId = rand(1000, 9999);
     }
 
-    // Send Telegram Order Notification
-    $orderCardData = [
-        'order_id' => $orderId,
-        'user' => [
-            'first_name' => $authUser ? $authUser['username'] : 'Гость',
-            'username' => $authUser['telegram_handle'] ?? ($contact[0] === '@' ? ltrim($contact, '@') : '')
-        ],
-        'subject' => $title,
-        'description' => $description,
-        'deadline' => $deadline,
-        'contact' => $contact
-    ];
+    // Send Telegram Order Notification safely without blocking order creation
+    $telegramSent = false;
+    try {
+        $orderCardData = [
+            'order_id' => $orderId,
+            'user' => [
+                'first_name' => $authUser ? $authUser['username'] : 'Гость',
+                'username' => $authUser['telegram_handle'] ?? ($contact[0] === '@' ? ltrim($contact, '@') : '')
+            ],
+            'subject' => $title,
+            'description' => $description,
+            'deadline' => $deadline,
+            'contact' => $contact
+        ];
 
-    sendTelegramOrder($orderCardData, $savedFilesForTelegram);
+        $tgRes = sendTelegramOrder($orderCardData, $savedFilesForTelegram);
+        $telegramSent = !empty($tgRes['ok']);
+    } catch (\Throwable $tgError) {
+        error_log("[Telegram Order Error]: " . $tgError->getMessage());
+    }
 
     $createdOrder = [
         'id' => 'ord-' . $orderId,
@@ -539,8 +545,8 @@ if ($path === '/orders' && $method === 'POST') {
     jsonResponse([
         'message' => 'Заказ успешно создан и отправлен в BauSquad',
         'order' => $createdOrder,
-        'telegram_notified' => true
-    ]);
+        'telegram_notified' => $telegramSent
+    ], 201);
 }
 
 // Update Order Status (Admin)

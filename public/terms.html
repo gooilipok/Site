@@ -4,235 +4,163 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Пользовательское соглашение | BauSquad</title>
+    <link rel="icon" type="image/svg+xml" href="/logo.svg">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             background-color: #0f1418;
-            color: #ecf0f1;
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            color: #bdc3c7;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            font-size: 13px;
             line-height: 1.6;
-            padding: 20px 10px;
-            position: relative;
-            overflow-x: hidden;
+            padding: 24px 12px;
             min-height: 100vh;
         }
-
-        /* GEARS BACKGROUND ANIMATION */
-        .gears-bg {
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            pointer-events: none;
-            z-index: 0;
-            overflow: hidden;
-            opacity: 0.15;
-        }
-        .gear {
-            position: absolute;
-            border: 10px solid #c5a059;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .gear-1 {
-            width: 450px; height: 450px;
-            top: -100px; left: -100px;
-            animation: spin 35s linear infinite;
-        }
-        .gear-2 {
-            width: 600px; height: 600px;
-            top: 30%; right: -150px;
-            border-color: #3498db;
-            animation: spin-reverse 50s linear infinite;
-        }
-        .gear-3 {
-            width: 500px; height: 500px;
-            bottom: -100px; left: 20%;
-            border-color: #f1c40f;
-            animation: spin 40s linear infinite;
-        }
-        @keyframes spin { 100% { transform: rotate(360deg); } }
-        @keyframes spin-reverse { 100% { transform: rotate(-360deg); } }
-
-        /* CONTAINER */
         .container {
             max-width: 1000px;
             margin: 0 auto;
-            position: relative;
-            z-index: 10;
+            background: #1a252f;
+            border-top: 4px solid #c5a059;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+            padding: 32px;
         }
-
-        /* TOP NAVIGATION */
         .nav-bar {
-            background-color: #1a252f;
-            border-bottom: 3px solid #c5a059;
-            padding: 15px 20px;
-            margin-bottom: 25px;
             display: flex;
             flex-wrap: wrap;
-            align-items: center;
-            justify-content: space-between;
-            gap: 15px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-        }
-        .nav-title {
-            font-size: 13px;
-            font-weight: 800;
-            text-transform: uppercase;
-            color: #c5a059;
-            letter-spacing: 1px;
-            display: flex;
-            align-items: center;
             gap: 8px;
-        }
-        .nav-links {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #2b3d4f;
         }
         .nav-btn {
-            display: inline-block;
-            padding: 8px 14px;
+            display: inline-flex;
+            align-items: center;
+            padding: 6px 14px;
             font-size: 11px;
-            font-weight: 800;
+            font-weight: 700;
             text-transform: uppercase;
             text-decoration: none;
             color: #bdc3c7;
-            background-color: #0f1418;
+            background: #0f1418;
             border: 1px solid rgba(255,255,255,0.1);
-            transition: all 0.2s ease;
+            transition: all 0.2s;
         }
-        .nav-btn:hover, .nav-btn.active {
-            background-color: #c5a059;
+        .nav-btn:hover { color: #fff; border-color: #c5a059; }
+        .nav-btn.active {
+            background: #c5a059;
             color: #000;
             border-color: #c5a059;
-            box-shadow: 0 4px 12px rgba(197,160,89,0.3);
         }
-        .nav-btn.home {
-            background-color: #2b3d4f;
-            color: #fff;
-        }
-
-        /* DOCUMENT BODY */
-        .doc-card {
-            background-color: #1a252f;
-            border-top: 4px solid #c5a059;
-            border-radius: 0;
-            padding: 35px;
-            box-shadow: 0 15px 35px rgba(0,0,0,0.6);
-            margin-bottom: 40px;
-        }
-        .doc-header {
-            border-bottom: 1px solid #2b3d4f;
-            padding-bottom: 20px;
-            margin-bottom: 25px;
-        }
-        .doc-header h1 {
-            font-size: 22px;
-            font-weight: 900;
-            text-transform: uppercase;
-            color: #ffffff;
-            letter-spacing: 0.5px;
-            margin-top: 10px;
-        }
-        .doc-sub {
-            font-size: 12px;
-            color: #bdc3c7;
-            margin-top: 5px;
-        }
-        .doc-content p {
-            margin-bottom: 14px;
-            font-size: 12px;
-            color: #bdc3c7;
-            text-align: justify;
-        }
-        .doc-content strong { color: #ffffff; }
-        .doc-content a { color: #c5a059; text-decoration: underline; }
-        .section-title {
-            font-size: 14px;
-            font-weight: 800;
-            text-transform: uppercase;
+        .nav-btn.home { margin-left: auto; background: #2b3d4f; color: #fff; }
+        .header-badge {
+            display: inline-block;
+            background: rgba(197,160,89,0.15);
+            border: 1px solid #c5a059;
             color: #f1c40f;
-            margin: 25px 0 12px 0;
-            padding-bottom: 5px;
-            border-bottom: 1px border #2b3d4f;
-        }
-
-        /* SCROLL TO TOP */
-        #toTop {
-            position: fixed;
-            bottom: 30px;
-            right: 30px;
-            background-color: #c5a059;
-            color: #000;
-            border: none;
-            padding: 12px 18px;
-            font-size: 14px;
-            font-weight: 900;
+            padding: 3px 8px;
+            font-size: 11px;
+            font-weight: 700;
             text-transform: uppercase;
-            cursor: pointer;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.6);
-            display: none;
-            z-index: 100;
+            margin-bottom: 12px;
         }
-        #toTop.show { display: block; }
+        h1 { color: #fff; font-size: 18px; font-weight: 900; text-transform: uppercase; margin-bottom: 8px; }
+        h2 { color: #fff; font-size: 14px; font-weight: 800; text-transform: uppercase; margin: 24px 0 12px; padding-bottom: 6px; border-bottom: 1px solid #2b3d4f; }
+        p { margin-bottom: 10px; }
+        strong { color: #fff; }
+        a { color: #c5a059; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .nav-tree {
+            background: #0f1418;
+            border: 1px solid rgba(197,160,89,0.3);
+            padding: 16px;
+            margin: 20px 0;
+        }
+        .nav-tree h3 { color: #c5a059; font-size: 11px; text-transform: uppercase; margin-bottom: 10px; }
+        .nav-tree ul { list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 6px; }
+        .nav-tree li a { font-size: 12px; }
+        .requisites {
+            background: #0f1418;
+            border: 1px solid #c5a059;
+            padding: 16px;
+            margin-top: 20px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .footer {
+            margin-top: 32px;
+            padding-top: 16px;
+            border-top: 1px solid #2b3d4f;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
     </style>
 </head>
 <body>
-
-    <!-- ROTATING GEARS BACKGROUND -->
-    <div class="gears-bg">
-        <div class="gear gear-1"></div>
-        <div class="gear gear-2"></div>
-        <div class="gear gear-3"></div>
-    </div>
-
     <div class="container">
-        <!-- NAVIGATION -->
         <div class="nav-bar">
-            <div class="nav-title">⚙️ BauSquad Документы</div>
-            <div class="nav-links">
-                <a href="/terms" class="nav-btn active">Пользовательское соглашение</a>
-                <a href="/privacy" class="nav-btn">Политика конфиденциальности</a>
-                <a href="/consent" class="nav-btn">Согласие на обработку ПД</a>
-                <a href="/" class="nav-btn home">← На главную</a>
-            </div>
+            <a href="/terms" class="nav-btn active">Пользовательское соглашение</a>
+            <a href="/privacy" class="nav-btn">Политика конфиденциальности</a>
+            <a href="/consent" class="nav-btn">Согласие на обработку ПД</a>
+            <a href="/" class="nav-btn home">На главную</a>
         </div>
 
-        <!-- DOCUMENT CARD -->
-        <div class="doc-card">
-            <div class="doc-header">
-                <p style="font-size: 11px; color: #c5a059; text-transform: uppercase; font-weight: 800;">Официальная оферта</p>
-                <h1>Пользовательское соглашение</h1>
-                <p class="doc-sub">«ИНДИВИДУАЛЬНЫЙ ПРЕДПРИНИМАТЕЛЬ СЕМЁНОВ АНДРЕЙ СЕРГЕЕВИЧ» (коммерческое обозначение: «AT Bausquad»). Обновлено: 01.08.2026</p>
-            </div>
+        <span class="header-badge">Публичная Оферта • Официальный документ</span>
+        <h1>Пользовательское соглашение с ИП Семёновым Даниилом Алексеевичем («AT Bausquad»)</h1>
+        <p style="color:#7f8c8d; font-size:11px; margin-bottom:16px;">Редакция от: 01.08.2026</p>
 
-            <div class="doc-content">
-                <p><strong>Пользовательское соглашение с </strong><strong>«ИНДИВИДУАЛЬНЫЙ ПРЕДПРИНИМАТЕЛЬ СЕМЁНОВ АНДРЕЙ СЕРГЕЕВИЧ»</strong>, коммерческое обозначение которого: «AT Bausquad» (возможные варианты написания: «BAUSQUAD», «Bausquad» и подобные вариации) на сайте <a href="https://bausquad.org/">https://bausquad.org/</a>.</p>
-                
-                <p>Настоящий документ является предложением ИП СЕМЁНОВ АНДРЕЙ СЕРГЕЕВИЧ (далее — Организация) заключить Договор на оказание консультационных и научно-исследовательских услуг с любым заинтересованным лицом.</p>
+        <div class="nav-tree">
+            <h3>Дерево глав соглашения</h3>
+            <ul>
+                <li><a href="#t1">1. Термины и определения</a></li>
+                <li><a href="#t2">2. Предмет и порядок заключения соглашения</a></li>
+                <li><a href="#t3">3. Функциональные возможности платформы</a></li>
+                <li><a href="#t4">4. Ответственность и права сторон</a></li>
+                <li><a href="#t5">5. Финансовые условия и порядок расчетов</a></li>
+                <li><a href="#t6">6. Порядок разрешения споров</a></li>
+                <li><a href="#t7">7. Конфиденциальность и интеллектуальные права</a></li>
+                <li><a href="#t8">8. Срок действия и реквизиты Исполнителя</a></li>
+            </ul>
+        </div>
 
-                <div class="section-title">1. Термины и определения</div>
-                <p><strong>«Сайт»</strong> — Интернет-ресурс, расположенный в сети Интернет по адресу: <a href="https://bausquad.org/">https://bausquad.org/</a> и поддоменах.</p>
-                <p><strong>«Администрация»</strong> — ИП СЕМЁНОВ АНДРЕЙ СЕРГЕЕВИЧ, ОГРНИП: 326774600536097, ИНН: 773395090916.</p>
-                <p><strong>«Пользователь»</strong> — физическое лицо, принявшее условия соглашения и публичной оферты.</p>
+        <p>Настоящий документ является публичной офертой <strong>Индивидуального предпринимателя Семёнова Даниила Алексеевича</strong> (ИНН: 773395090916, ОГРНИП: 326774600536097, коммерческое обозначение: «AT Bausquad») физическому лицу заключить Пользовательское соглашение на оказание платных консультационных услуг.</p>
 
-                <div class="section-title">2. Реквизиты исполнителя</div>
-                <p>ОРГАНИЗАЦИЯ ИНДИВИДУАЛЬНЫЙ ПРЕДПРИНИМАТЕЛЬ СЕМЁНОВ АНДРЕЙ СЕРГЕЕВИЧ 125310, г. Москва, ш. Пятницкое. Электронная почта: <a href="mailto:support@bausquad.org">support@bausquad.org</a></p>
-                <p>ОГРНИП: 326774600536097 | ИНН: 773395090916</p>
-            </div>
+        <h2 id="t1">1. Термины и определения</h2>
+        <p><strong>1.1. Платформа</strong> — веб-сайт <a href="https://bausquad.org/">https://bausquad.org/</a> и официальные боты (@BauSquadBot).</p>
+        <p><strong>1.2. Исполнитель</strong> — ИП Семёнов Даниил Алексеевич, коммерческое обозначение «AT Bausquad».</p>
+        <p><strong>1.3. Консультационные услуги</strong> — подбор литературы, структурирование, макетирование и форматирование учебных и научно-исследовательских материалов.</p>
+
+        <h2 id="t2">2. Предмет и порядок заключения соглашения</h2>
+        <p><strong>2.1.</strong> Исполнитель оказывает консультационные услуги согласно согласованному ТЗ, а Клиент обязуется принять и оплатить их.</p>
+        <p><strong>2.2.</strong> Гарантийный срок бесплатных корректировок по ТЗ составляет <strong>14 календарных дней</strong> с момента предоставления первоначального макета.</p>
+
+        <h2 id="t3">3. Функциональные возможности платформы</h2>
+        <p>Предоставление доступа к Личному кабинету, оформление заявок, отслеживание статуса и взаимодействие со службой поддержки.</p>
+
+        <h2 id="t4">4. Ответственность и права сторон</h2>
+        <p>Результаты услуг носят исключительно информационно-консультационный характер и предназначены для самостоятельной подготовки Клиента.</p>
+
+        <h2 id="t5">5. Финансовые условия</h2>
+        <p>Стоимость рассчитывается индивидуально в зависимости от сложности, объема и срочности выполнения работы.</p>
+
+        <h2 id="t6">6. Порядок разрешения споров</h2>
+        <p>Обязательный досудебный претензионный порядок. Срок ответа на претензию на <a href="mailto:support@bausquad.org">support@bausquad.org</a> — 14 календарных дней.</p>
+
+        <h2 id="t7">7. Конфиденциальность</h2>
+        <p>Стороны гарантируют конфиденциальность всей передаваемой информации.</p>
+
+        <h2 id="t8">8. Срок действия и реквизиты</h2>
+        <div class="requisites">
+            <p><strong>ИП Семёнов Даниил Алексеевич</strong> (AT Bausquad)</p>
+            <p>ИНН: 773395090916 | ОГРНИП: 326774600536097</p>
+            <p>Адрес: 125310, г. Москва, д. Митиностан</p>
+            <p>Поддержка: support@bausquad.org | Email: a.s.semyonov@mail.ru</p>
+        </div>
+
+        <div class="footer">
+            <a href="/" class="nav-btn home">← Вернуться на главную BauSquad</a>
+            <span>© 2026 BauSquad. Все права защищены.</span>
         </div>
     </div>
-
-    <button id="toTop">↑ Наверх</button>
-
-    <script>
-        const btn = document.getElementById("toTop");
-        window.addEventListener("scroll", () => {
-            if (window.scrollY > 300) btn.classList.add("show");
-            else btn.classList.remove("show");
-        });
-        btn.onclick = () => window.scrollTo({ top: 0, behavior: "smooth" });
-    </script>
 </body>
 </html>

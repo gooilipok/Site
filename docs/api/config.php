@@ -127,13 +127,17 @@ function sendCorsHeaders() {
     header("Access-Control-Allow-Headers: Origin, X-Requested-With, Content-Type, Accept, Authorization");
     header("Access-Control-Allow-Credentials: true");
 
-    if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
         http_response_code(200);
         exit();
     }
 }
 
 function jsonResponse($data, $statusCode = 200) {
+    // Очистить буфер вывода от любых случайных предупреждений или пробелов
+    if (ob_get_length()) {
+        ob_clean();
+    }
     http_response_code($statusCode);
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -146,3 +150,16 @@ function getJsonInput() {
     $parsed = json_decode($raw, true);
     return is_array($parsed) ? array_merge($_POST, $parsed) : $_POST;
 }
+
+// 10. Глобальный перехватчик фатальных ошибок и необработанных исключений для предотвращения 502 Bad Gateway
+register_shutdown_function(function() {
+    $err = error_get_last();
+    if ($err && in_array($err['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR])) {
+        sendCorsHeaders();
+        jsonResponse([
+            'error' => 'Критическая ошибка PHP на сервере',
+            'detail' => $err['message'] . ' in ' . basename($err['file']) . ':' . $err['line'],
+            'type' => 'PHP_FATAL_ERROR'
+        ], 500);
+    }
+});

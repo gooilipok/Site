@@ -1,21 +1,29 @@
+# ====================================================================
+# BauSquad — Apache Server Configuration (.htaccess)
+# Supports React Router SPA HTML5 History mode and PHP REST API Router
+# ====================================================================
+
 <IfModule mod_rewrite.c>
     RewriteEngine On
     RewriteBase /
 
-    # Route /api/ requests to the PHP API index inside api/
+    # 1. Route all /api/* requests to the PHP Master Router
     RewriteRule ^api/(.*)$ api/index.php [QSA,L]
     RewriteRule ^api$ api/index.php [QSA,L]
 
-    # Serve existing files/directories directly
+    # 2. Pass static files and existing directories through
     RewriteCond %{REQUEST_FILENAME} -f [OR]
     RewriteCond %{REQUEST_FILENAME} -d
     RewriteRule ^ - [L]
 
-    # Fallback to index.html for React Router SPA
-    RewriteRule ^ index.html [L]
+    # 3. Fallback all frontend routes (/create, /login, /profile, /admin, etc.) to index.html for React Router
+    RewriteRule ^(.*)$ /index.html [QSA,L]
 </IfModule>
 
-# Enable GZIP compression
+# 4. Fallback 404 handler for SPA routing
+ErrorDocument 404 /index.html
+
+# 5. Enable GZIP compression for maximum performance
 <IfModule mod_deflate.c>
     AddOutputFilterByType DEFLATE text/plain
     AddOutputFilterByType DEFLATE text/html
@@ -27,4 +35,11 @@
     AddOutputFilterByType DEFLATE application/javascript
     AddOutputFilterByType DEFLATE application/x-javascript
     AddOutputFilterByType DEFLATE application/json
+</IfModule>
+
+# 6. Set proper MIME types
+<IfModule mod_mime.c>
+    AddType application/javascript .js
+    AddType text/css .css
+    AddType image/svg+xml .svg
 </IfModule>

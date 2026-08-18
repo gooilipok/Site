@@ -69,18 +69,19 @@ function getAuthenticatedUser($pdo): ?array {
         return null;
     }
 
-    $numericId = (int)preg_replace('/\D/', '', $payload['userId']);
-    if ($numericId <= 0) $numericId = $payload['userId'];
+    $rawId = $payload['userId'];
+    $numericId = (int)preg_replace('/\D/', '', (string)$rawId);
+    if ($numericId <= 0) $numericId = 1;
 
     if ($pdo) {
         try {
-            $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ? OR login = ? LIMIT 1");
-            $stmt->execute([$numericId, $payload['userId']]);
+            $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ? OR login = ? OR email = ? LIMIT 1");
+            $stmt->execute([$numericId, $rawId, $rawId]);
             $user = $stmt->fetch();
             if ($user) {
                 return formatUser($user, $pdo);
             }
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
             error_log("[Auth User Fetch Error]: " . $e->getMessage());
         }
     }
@@ -113,32 +114,47 @@ function getAuthenticatedUser($pdo): ?array {
 }
 
 function formatUser($row, $pdo = null): array {
+    if (!is_array($row)) return [];
+
+    $userId = $row['id'] ?? ($row['user_id'] ?? 1);
+    $login = $row['login'] ?? ($row['username'] ?? ($row['name'] ?? 'Пользователь'));
+    $email = $row['email'] ?? ($row['mail'] ?? '');
+    $role = ($row['role'] ?? '') === 'admin' ? 'admin' : 'customer';
+    $status = $row['account_status'] ?? ($row['status'] ?? 'active');
+
     $orderCount = 0;
-    if ($pdo && isset($row['id'])) {
+    if ($pdo && $userId) {
         try {
             $stmt = $pdo->prepare("SELECT COUNT(*) FROM orders WHERE client_id = ?");
-            $stmt->execute([$row['id']]);
+            $stmt->execute([$userId]);
             $orderCount = (int)$stmt->fetchColumn();
-        } catch (Exception $e) {}
+        } catch (\Throwable $e) {}
+    }
+
+    $createdAt = date('c');
+    if (!empty($row['registration_date'])) {
+        $createdAt = date('c', strtotime($row['registration_date']));
+    } elseif (!empty($row['created_at'])) {
+        $createdAt = date('c', strtotime($row['created_at']));
     }
 
     return [
-        'id' => 'usr-' . $row['id'],
-        'email' => $row['email'],
-        'username' => $row['login'],
-        'role' => $row['role'] === 'admin' ? 'admin' : 'customer',
-        'account_status' => $row['account_status'] ?? 'active',
-        'is_verified' => (bool)($row['is_verified'] ?? 1),
-        'created_at' => $row['registration_date'] ? date('c', strtotime($row['registration_date'])) : date('c'),
+        'id' => 'usr-' . $userId,
+        'email' => $email,
+        'username' => $login,
+        'role' => $role,
+        'account_status' => $status,
+        'is_verified' => !empty($row['is_verified']),
+        'created_at' => $createdAt,
         'telegram_handle' => $row['telegram_handle'] ?? '',
         'tg_id' => $row['tg_id'] ?? '',
         'agreements' => [
-            'terms_accepted' => (bool)($row['user_agreement'] ?? 1),
-            'terms_accepted_at' => $row['user_agreement_date'] ? date('c', strtotime($row['user_agreement_date'])) : date('c'),
-            'privacy_accepted' => (bool)($row['privacy_agreement'] ?? 1),
-            'privacy_accepted_at' => $row['privacy_agreement_date'] ? date('c', strtotime($row['privacy_agreement_date'])) : date('c'),
-            'consent_accepted' => (bool)($row['processing_personal_data_agreement'] ?? 1),
-            'consent_accepted_at' => $row['processing_personal_data_agreement_date'] ? date('c', strtotime($row['processing_personal_data_agreement_date'])) : date('c')
+            'terms_accepted' => !empty($row['user_agreement'] ?? $row['terms_accepted'] ?? 1),
+            'terms_accepted_at' => !empty($row['user_agreement_date']) ? date('c', strtotime($row['user_agreement_date'])) : $createdAt,
+            'privacy_accepted' => !empty($row['privacy_agreement'] ?? $row['privacy_accepted'] ?? 1),
+            'privacy_accepted_at' => !empty($row['privacy_agreement_date']) ? date('c', strtotime($row['privacy_agreement_date'])) : $createdAt,
+            'consent_accepted' => !empty($row['processing_personal_data_agreement'] ?? $row['consent_accepted'] ?? 1),
+            'consent_accepted_at' => !empty($row['processing_personal_data_agreement_date']) ? date('c', strtotime($row['processing_personal_data_agreement_date'])) : $createdAt
         ],
         'order_count' => $orderCount
     ];
@@ -154,7 +170,7 @@ function verifyPassword($plainPassword, $storedHash): bool {
     if ($plainPassword === $storedHash) return true;
 
     // 2. Standard password_verify (Bcrypt, Argon2)
-    if (password_verify($plainPassword, $storedHash)) return true;
+    if (@password_verify($plainPassword, $storedHash)) return true;
 
     // 3. MD5 hash
     if (strtolower(md5($plainPassword)) === strtolower($storedHash)) return true;

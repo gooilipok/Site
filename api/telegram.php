@@ -2,7 +2,7 @@
 /**
  * BauSquad — Telegram Bot API Service
  * Отправка структурированных карточек заказов, фото и документов
- * Оптимизировано с быстрыми таймаутами для предотвращения 502 Bad Gateway
+ * Полная защита от зависаний и 502 Bad Gateway таймаутов на хостинге
  */
 require_once __DIR__ . '/config.php';
 
@@ -47,7 +47,7 @@ function getMimeTypeSafely($filePath, $default = 'application/octet-stream'): st
     return $map[$ext] ?? $default;
 }
 
-function sendTelegramRequest($endpoint, $postData, $isMultipart = false): array {
+function sendTelegramRequest($endpoint, $postData, $isMultipart = false, $timeoutSeconds = 2): array {
     $token = TELEGRAM_BOT_TOKEN;
     if (empty($token)) {
         return ['ok' => false, 'error' => 'Bot token is empty'];
@@ -62,29 +62,36 @@ function sendTelegramRequest($endpoint, $postData, $isMultipart = false): array 
     $lastError = 'Unknown error';
 
     foreach ($endpoints as $url) {
+        if (!function_exists('curl_init')) {
+            return ['ok' => false, 'error' => 'cURL PHP extension is not installed'];
+        }
+
+        $ch = @curl_init();
+        if (!$ch) continue;
+
         try {
-            $ch = curl_init();
-            curl_setopt($ch, CURLOPT_URL, $url);
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 2); // 2 сек таймаут соединения
-            curl_setopt($ch, CURLOPT_TIMEOUT, 3);        // 3 сек общий таймаут на запрос
-            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-            curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+            @curl_setopt($ch, CURLOPT_URL, $url);
+            @curl_setopt($ch, CURLOPT_POST, true);
+            @curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            @curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, (int)$timeoutSeconds);
+            @curl_setopt($ch, CURLOPT_TIMEOUT, (int)$timeoutSeconds + 1);
+            @curl_setopt($ch, CURLOPT_NOSIGNAL, 1);
+            @curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            @curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
 
             if ($isMultipart) {
-                curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
+                @curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
             } else {
-                curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-                curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($postData));
+                @curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+                @curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($postData));
             }
 
-            $response = curl_exec($ch);
-            $error = curl_error($ch);
-            curl_close($ch);
+            $response = @curl_exec($ch);
+            $error = @curl_error($ch);
+            @curl_close($ch);
 
             if ($response) {
-                $json = json_decode($response, true);
+                $json = @json_decode($response, true);
                 if (!empty($json['ok'])) {
                     return ['ok' => true, 'data' => $json];
                 }
@@ -92,9 +99,10 @@ function sendTelegramRequest($endpoint, $postData, $isMultipart = false): array 
                     $lastError = $json['description'];
                 }
             } else {
-                $lastError = $error ?: 'No response from Telegram endpoint';
+                $lastError = $error ?: 'No response / network timeout';
             }
         } catch (\Throwable $e) {
+            @curl_close($ch);
             $lastError = $e->getMessage();
         }
     }
@@ -112,7 +120,7 @@ function sendTelegramMessage($text, $chatId = null): array {
 }
 
 /**
- * Отправка заказа с фото-коллажем и документами
+ * Отправка заказа с фото и документами
  */
 function sendTelegramOrder(array $orderData, array $files = []): array {
     try {
@@ -169,7 +177,7 @@ function sendTelegramOrder(array $orderData, array $files = []): array {
                     'media' => "attach://{$attachKey}"
                 ];
                 if ($idx === 0) {
-                    $item['caption'] = mb_strlen($text) <= 1024 ? $text : "📸 <b>Фотографии к заказу #{$orderId}</b> (" . count($photos) . " шт.)";
+                    $item['caption'] = mb_strlen($text) <= 1024 ? $text : "📸 <b>Фото к заказу #{$orderId}</b> (" . count($photos) . " шт.)";
                     $item['parse_mode'] = 'HTML';
                 }
                 $mediaGroup[] = $item;

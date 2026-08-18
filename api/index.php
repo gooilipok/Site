@@ -74,14 +74,19 @@ try {
     // ==========================================\
     // 1. HEALTH & DIAGNOSTICS
     // ==========================================\
-    if ($path === '/health' || $path === '/ping' || $path === '') {
+    if ($path === '/health' || $path === '/ping' || $path === '/diag' || $path === '/diag.php' || $path === '/diagnostics' || $path === '') {
         global $loadedEnvFile, $lastDbConnectionError;
         
         $dbStatus = ($pdo !== null);
         $tables = [];
+        $tableCounts = [];
         if ($pdo) {
             try {
                 $tables = $pdo->query("SHOW TABLES")->fetchAll(PDO::FETCH_COLUMN);
+                foreach ($tables as $t) {
+                    $c = $pdo->query("SELECT COUNT(*) FROM `{$t}`")->fetchColumn();
+                    $tableCounts[$t] = (int)$c;
+                }
             } catch (\Throwable $e) {}
         }
 
@@ -100,7 +105,7 @@ try {
                 'host' => DB_HOST,
                 'port' => DB_PORT,
                 'tables_count' => count($tables),
-                'tables' => $tables
+                'tables' => $tableCounts
             ],
             'telegram' => [
                 'bot_token_set' => !empty(TELEGRAM_BOT_TOKEN),

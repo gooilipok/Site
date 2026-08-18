@@ -2,7 +2,6 @@
 /**
  * BauSquad — Hosting Diagnostics & Health Inspector
  * Доступно по адресу: https://www.bausquad.org/api/diag.php (или /api/diag.php?format=json)
- * Помогает мгновенно найти причину любых ошибок развертывания на хостинге nic.ru
  */
 
 require_once __DIR__ . '/config.php';
@@ -10,7 +9,7 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/jwt.php';
 require_once __DIR__ . '/telegram.php';
 
-$format = $_GET['format'] ?? 'html';
+$format = $_GET['format'] ?? (isset($_GET['json']) ? 'json' : 'html');
 
 $report = [
     'timestamp' => date('c'),
@@ -19,25 +18,27 @@ $report = [
     'php_sapi' => php_sapi_name(),
     'document_root' => $_SERVER['DOCUMENT_ROOT'] ?? '',
     'script_filename' => $_SERVER['SCRIPT_FILENAME'] ?? '',
-    'loaded_env_path' => $loadedEnvFile ?: 'built-in constants in config.php',
+    'loaded_env_path' => $loadedEnvFile ?: 'default constants',
     'checks' => []
 ];
 
-// 1. PHP Extensions Check
+// 1. Extensions
 $requiredExtensions = ['pdo', 'pdo_mysql', 'curl', 'json', 'mbstring', 'openssl'];
 $extResults = [];
 foreach ($requiredExtensions as $ext) {
-    $loaded = extension_loaded($ext);
-    $extResults[$ext] = $loaded;
+    $extResults[$ext] = extension_loaded($ext);
 }
 $report['checks']['extensions'] = [
     'status' => !in_array(false, $extResults, true) ? 'OK' : 'WARNING',
     'details' => $extResults
 ];
 
-// 2. MySQL Connection Test
+// 2. MySQL Connection
 $startDb = microtime(true);
-$pdo = getDB();
+$pdo = null;
+try {
+    $pdo = getDB();
+} catch (\Throwable $e) {}
 $dbDuration = round((microtime(true) - $startDb) * 1000, 2);
 
 if ($pdo) {
@@ -72,9 +73,14 @@ if ($pdo) {
     ];
 }
 
-// 3. Telegram Bot Connection Test
+// 3. Telegram Bot Check (Ultra-short 1 sec non-blocking timeout)
 $startTg = microtime(true);
-$tgCheck = sendTelegramRequest('getMe', []);
+$tgCheck = ['ok' => false, 'error' => 'Skipped in fast check'];
+if (isset($_GET['test_telegram'])) {
+    $tgCheck = sendTelegramRequest('getMe', [], false, 1);
+} else {
+    $tgCheck = ['ok' => !empty(TELEGRAM_BOT_TOKEN), 'note' => 'Token configured (add ?test_telegram=1 to ping live)'];
+}
 $tgDuration = round((microtime(true) - $startTg) * 1000, 2);
 
 $report['checks']['telegram'] = [
@@ -86,7 +92,7 @@ $report['checks']['telegram'] = [
     'response' => $tgCheck
 ];
 
-// 4. File System & Uploads Directory
+// 4. File System
 $uploadsWritable = is_writable(UPLOADS_DIR);
 $report['checks']['filesystem'] = [
     'uploads_dir' => UPLOADS_DIR,
@@ -163,11 +169,11 @@ if ($format === 'json' || isset($_GET['json'])) {
     </div>
 
     <div class="card">
-        <h3>🤖 Telegram Bot API</h3>
+        <h3>🤖 Telegram Bot</h3>
         <div class="row">
-            <span class="label">Статус соединения:</span>
+            <span class="label">Конфигурация токена:</span>
             <span class="badge <?= $report['checks']['telegram']['status'] === 'OK' ? 'badge-ok' : 'badge-warn' ?>">
-                <?= $report['checks']['telegram']['status'] ?> (<?= $report['checks']['telegram']['ping_ms'] ?> ms)
+                <?= $report['checks']['telegram']['status'] ?>
             </span>
         </div>
         <div class="row"><span class="label">Прокси:</span><span class="val"><?= htmlspecialchars($report['checks']['telegram']['proxy']) ?></span></div>

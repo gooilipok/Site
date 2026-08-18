@@ -1,29 +1,30 @@
 # ====================================================================
-# BauSquad — Apache Server Configuration (.htaccess)
+# BauSquad — Master Apache Server Configuration (.htaccess)
 # Supports React Router SPA HTML5 History mode and PHP REST API Router
+# Compatible with nic.ru / RU-CENTER shared hosting & VPS
 # ====================================================================
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
     RewriteBase /
 
-    # 1. Route all /api/* requests to the PHP Master Router
-    RewriteRule ^api/(.*)$ api/index.php [QSA,L]
-    RewriteRule ^api$ api/index.php [QSA,L]
-
-    # 2. Pass static files and existing directories through
+    # 1. Allow existing physical files and directories to pass through directly
     RewriteCond %{REQUEST_FILENAME} -f [OR]
     RewriteCond %{REQUEST_FILENAME} -d
     RewriteRule ^ - [L]
 
-    # 3. Fallback all frontend routes (/create, /login, /profile, /admin, etc.) to index.html for React Router
-    RewriteRule ^(.*)$ /index.html [QSA,L]
+    # 2. Route all other /api/* requests to the PHP Master Router
+    RewriteRule ^api/(.*)$ api/index.php [QSA,L]
+    RewriteRule ^api$ api/index.php [QSA,L]
+
+    # 3. Fallback all frontend routes (/login, /register, /agreements, /profile, etc.) to index.html for React Router
+    RewriteRule ^(.*)$ index.html [QSA,L]
 </IfModule>
 
-# 4. Fallback 404 handler for SPA routing
+# Fallback 404 handler for SPA routing
 ErrorDocument 404 /index.html
 
-# 5. Enable GZIP compression for maximum performance
+# Enable GZIP compression
 <IfModule mod_deflate.c>
     AddOutputFilterByType DEFLATE text/plain
     AddOutputFilterByType DEFLATE text/html
@@ -37,7 +38,7 @@ ErrorDocument 404 /index.html
     AddOutputFilterByType DEFLATE application/json
 </IfModule>
 
-# 6. Set proper MIME types
+# Set proper MIME types
 <IfModule mod_mime.c>
     AddType application/javascript .js
     AddType text/css .css

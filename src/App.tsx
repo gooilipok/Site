@@ -45,7 +45,7 @@ export default function App() {
                 <Route path="/order/create" element={<CreateOrderPage />} />
                 
                 {/* Agreements Routes */}
-                <Route path="/agreements" element={<TermsPage />} />
+                <Route path="/agreements" element={<AgreementsPage />} />
                 <Route path="/terms" element={<TermsPage />} />
                 <Route path="/privacy" element={<PrivacyPage />} />
                 <Route path="/consent" element={<ConsentPage />} />

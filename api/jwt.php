@@ -1,6 +1,7 @@
 <?php
 /**
  * BauSquad — Authentication & JWT Security Helpers
+ * Совместимо с PHP 7.4+ и структурой базы данных bau7824897_db
  */
 require_once __DIR__ . '/config.php';
 
@@ -16,7 +17,7 @@ function generateJWT($userId, $role, $type = 'access') {
     $expiresIn = ($type === 'access') ? JWT_ACCESS_EXPIRY : JWT_REFRESH_EXPIRY;
     $payload = [
         'userId' => (string)$userId,
-        'role'   => $role === 'admin' ? 'admin' : 'customer',
+        'role'   => ($role === 'admin') ? 'admin' : 'customer',
         'type'   => $type,
         'exp'    => time() + $expiresIn,
         'iat'    => time(),
@@ -54,7 +55,7 @@ function getBearerToken(): ?string {
         $headers = $requestHeaders['Authorization'] ?? ($requestHeaders['authorization'] ?? null);
     }
 
-    if (!empty($headers) && preg_match('/Bearer\s(\S+)/', $headers, $matches)) {
+    if (!empty($headers) && preg_match('/Bearer\s(\S+)/i', $headers, $matches)) {
         return $matches[1];
     }
     return null;
@@ -75,8 +76,8 @@ function getAuthenticatedUser($pdo): ?array {
 
     if ($pdo) {
         try {
-            $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ? OR login = ? OR email = ? LIMIT 1");
-            $stmt->execute([$numericId, $rawId, $rawId]);
+            $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ? OR LOWER(login) = ? OR LOWER(email) = ? LIMIT 1");
+            $stmt->execute([$numericId, strtolower($rawId), strtolower($rawId)]);
             $user = $stmt->fetch();
             if ($user) {
                 return formatUser($user, $pdo);
@@ -87,7 +88,7 @@ function getAuthenticatedUser($pdo): ?array {
     }
 
     // Default admin in-memory fallback
-    if ($payload['userId'] === 'usr-admin-01' || $payload['role'] === 'admin') {
+    if ($payload['userId'] === 'usr-admin-01' || ($payload['role'] ?? '') === 'admin') {
         return [
             'id' => 'usr-admin-01',
             'email' => 'admin@bausquad.ru',
@@ -119,7 +120,7 @@ function formatUser($row, $pdo = null): array {
     $userId = $row['id'] ?? ($row['user_id'] ?? 1);
     $login = $row['login'] ?? ($row['username'] ?? ($row['name'] ?? 'Пользователь'));
     $email = $row['email'] ?? ($row['mail'] ?? '');
-    $role = ($row['role'] ?? '') === 'admin' ? 'admin' : 'customer';
+    $role = (($row['role'] ?? '') === 'admin') ? 'admin' : 'customer';
     $status = $row['account_status'] ?? ($row['status'] ?? 'active');
 
     $orderCount = 0;
@@ -138,6 +139,10 @@ function formatUser($row, $pdo = null): array {
         $createdAt = date('c', strtotime($row['created_at']));
     }
 
+    $termsDate = !empty($row['user_agreement_date']) ? date('c', strtotime($row['user_agreement_date'])) : $createdAt;
+    $privacyDate = !empty($row['privacy_agreement_date']) ? date('c', strtotime($row['privacy_agreement_date'])) : $createdAt;
+    $consentDate = !empty($row['processing_personal_data_agreement_date']) ? date('c', strtotime($row['processing_personal_data_agreement_date'])) : $createdAt;
+
     return [
         'id' => 'usr-' . $userId,
         'email' => $email,
@@ -149,12 +154,12 @@ function formatUser($row, $pdo = null): array {
         'telegram_handle' => $row['telegram_handle'] ?? '',
         'tg_id' => $row['tg_id'] ?? '',
         'agreements' => [
-            'terms_accepted' => !empty($row['user_agreement'] ?? $row['terms_accepted'] ?? 1),
-            'terms_accepted_at' => !empty($row['user_agreement_date']) ? date('c', strtotime($row['user_agreement_date'])) : $createdAt,
-            'privacy_accepted' => !empty($row['privacy_agreement'] ?? $row['privacy_accepted'] ?? 1),
-            'privacy_accepted_at' => !empty($row['privacy_agreement_date']) ? date('c', strtotime($row['privacy_agreement_date'])) : $createdAt,
-            'consent_accepted' => !empty($row['processing_personal_data_agreement'] ?? $row['consent_accepted'] ?? 1),
-            'consent_accepted_at' => !empty($row['processing_personal_data_agreement_date']) ? date('c', strtotime($row['processing_personal_data_agreement_date'])) : $createdAt
+            'terms_accepted' => !empty($row['user_agreement'] ?? ($row['terms_accepted'] ?? 1)),
+            'terms_accepted_at' => $termsDate,
+            'privacy_accepted' => !empty($row['privacy_agreement'] ?? ($row['privacy_accepted'] ?? 1)),
+            'privacy_accepted_at' => $privacyDate,
+            'consent_accepted' => !empty($row['processing_personal_data_agreement'] ?? ($row['consent_accepted'] ?? 1)),
+            'consent_accepted_at' => $consentDate
         ],
         'order_count' => $orderCount
     ];
@@ -164,7 +169,9 @@ function formatUser($row, $pdo = null): array {
  * Universal password verification supporting Bcrypt, MD5, SHA256, SHA512, PBKDF2 and Plaintext
  */
 function verifyPassword($plainPassword, $storedHash): bool {
-    if (!$plainPassword || !$storedHash) return false;
+    if ($plainPassword === null || $plainPassword === '' || $storedHash === null || $storedHash === '') {
+        return false;
+    }
 
     // 1. Plaintext direct match
     if ($plainPassword === $storedHash) return true;

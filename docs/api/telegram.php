@@ -2,6 +2,7 @@
 /**
  * BauSquad — Telegram Bot API Service
  * Отправка структурированных карточек заказов, фото и документов
+ * Оптимизировано с быстрыми таймаутами для предотвращения 502 Bad Gateway
  */
 require_once __DIR__ . '/config.php';
 
@@ -52,7 +53,6 @@ function sendTelegramRequest($endpoint, $postData, $isMultipart = false): array 
         return ['ok' => false, 'error' => 'Bot token is empty'];
     }
 
-    // В РФ api.telegram.org часто заблокирован, поэтому если указан TELEGRAM_API_PROXY — пробуем его ПЕРВЫМ!
     $endpoints = [];
     if (!empty(TELEGRAM_API_PROXY)) {
         $endpoints[] = rtrim(TELEGRAM_API_PROXY, '/') . "/bot{$token}/{$endpoint}";
@@ -67,8 +67,8 @@ function sendTelegramRequest($endpoint, $postData, $isMultipart = false): array 
             curl_setopt($ch, CURLOPT_URL, $url);
             curl_setopt($ch, CURLOPT_POST, true);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 4); // быстрый таймаут соединения (4 сек вместо 20)
-            curl_setopt($ch, CURLOPT_TIMEOUT, 8);        // общий таймаут на один запрос
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 2); // 2 сек таймаут соединения
+            curl_setopt($ch, CURLOPT_TIMEOUT, 3);        // 3 сек общий таймаут на запрос
             curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
             curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
 
@@ -142,7 +142,6 @@ function sendTelegramOrder(array $orderData, array $files = []): array {
         if (empty($photos)) {
             sendTelegramMessage($text, $chatId);
         } elseif (count($photos) === 1) {
-            // Одно фото
             $photo = $photos[0];
             $mimeType = getMimeTypeSafely($photo['path'], 'image/jpeg');
             $postData = [
@@ -156,7 +155,6 @@ function sendTelegramOrder(array $orderData, array $files = []): array {
             }
             sendTelegramRequest('sendPhoto', $postData, true);
         } else {
-            // Несколько фото (коллаж sendMediaGroup)
             if (mb_strlen($text) > 1024) {
                 sendTelegramMessage($text, $chatId);
             }
@@ -183,7 +181,7 @@ function sendTelegramOrder(array $orderData, array $files = []): array {
             sendTelegramRequest('sendMediaGroup', $postData, true);
         }
 
-        // 2. Отправка документов следом вторым сообщением
+        // 2. Отправка документов
         if (!empty($documents)) {
             foreach ($documents as $doc) {
                 $mimeType = getMimeTypeSafely($doc['path'], 'application/octet-stream');
@@ -203,4 +201,3 @@ function sendTelegramOrder(array $orderData, array $files = []): array {
         return ['ok' => false, 'error' => $e->getMessage()];
     }
 }
-

@@ -2,7 +2,18 @@
 /**
  * BauSquad — PHP Backend Configuration
  * Автоматическая загрузка и чтение параметров из .env файла
+ * Оптимизировано для работы на PHP 7.4+ (RU-CENTER / nic.ru и других хостингах)
  */
+
+// Отключаем вывод ошибок в тело ответа, чтобы не ломать JSON-заголовки и не вызывать 502 Bad Gateway
+error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
+
+// Включаем буферизацию вывода
+if (!ob_get_level()) {
+    ob_start();
+}
 
 // 1. Автоматический поиск и парсинг .env файла
 function loadEnv($customPath = null): ?string {
@@ -114,6 +125,8 @@ if (!is_dir(UPLOADS_DIR)) {
 
 // 9. Global CORS and JSON Headers
 function sendCorsHeaders() {
+    if (headers_sent()) return;
+
     $origin = $_SERVER['HTTP_ORIGIN'] ?? '*';
     $allowedList = array_map('trim', explode(',', ALLOWED_ORIGINS));
 
@@ -129,19 +142,21 @@ function sendCorsHeaders() {
 
     if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
         http_response_code(200);
-        exit();
+        exit(0);
     }
 }
 
 function jsonResponse($data, $statusCode = 200) {
-    // Очистить буфер вывода от любых случайных предупреждений или пробелов
-    if (ob_get_length()) {
-        ob_clean();
+    while (ob_get_level() > 0) {
+        @ob_end_clean();
     }
-    http_response_code($statusCode);
-    header('Content-Type: application/json; charset=utf-8');
+    if (!headers_sent()) {
+        http_response_code($statusCode);
+        sendCorsHeaders();
+        header('Content-Type: application/json; charset=utf-8');
+    }
     echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    exit();
+    exit(0);
 }
 
 function getJsonInput() {
@@ -151,16 +166,14 @@ function getJsonInput() {
     return is_array($parsed) ? array_merge($_POST, $parsed) : $_POST;
 }
 
-// 10. Глобальный перехватчик фатальных ошибок и необработанных исключений для предотвращения 502 Bad Gateway
+// 10. Глобальный перехватчик фатальных ошибок
 register_shutdown_function(function() {
     $err = error_get_last();
     if ($err && in_array($err['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR])) {
-        sendCorsHeaders();
         jsonResponse([
-            'error' => 'Критическая ошибка PHP на сервере',
+            'error' => 'Ошибка выполнения PHP на сервере',
             'detail' => $err['message'] . ' in ' . basename($err['file']) . ':' . $err['line'],
             'type' => 'PHP_FATAL_ERROR'
         ], 500);
     }
 });
-

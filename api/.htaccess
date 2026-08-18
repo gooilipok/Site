@@ -1,6 +1,15 @@
+# ====================================================================
+# BauSquad — API Subdirectory Configuration
+# ====================================================================
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    RewriteCond %{REQUEST_FILENAME} !-f
-    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteBase /api/
+
+    # Allow direct execution of existing PHP files (diag.php, test.php, etc.)
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # Route all other API endpoints to index.php
     RewriteRule ^(.*)$ index.php [QSA,L]
 </IfModule>

@@ -13,12 +13,11 @@
     RewriteCond %{REQUEST_FILENAME} -d
     RewriteRule ^ - [L]
 
-    # 2. Route all other /api/* requests to the PHP Master Router
-    RewriteRule ^api/(.*)$ api/index.php [QSA,L]
-    RewriteRule ^api$ api/index.php [QSA,L]
+    # 2. Route all other /api/* requests to api/index.php
+    RewriteRule ^api(/.*)?$ api/index.php [QSA,L]
 
-    # 3. Fallback all frontend routes (/login, /register, /agreements, /profile, etc.) to index.html for React Router
-    RewriteRule ^(.*)$ index.html [QSA,L]
+    # 3. Fallback all frontend routes to index.html for React Router
+    RewriteRule ^ index.html [QSA,L]
 </IfModule>
 
 # Fallback 404 handler for SPA routing

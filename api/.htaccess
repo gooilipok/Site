@@ -1,15 +1,20 @@
 # ====================================================================
-# BauSquad — API Subdirectory Configuration
+# BauSquad — API Subdirectory Configuration (.htaccess)
+# Prevents infinite internal redirect loops on Apache / FastCGI
 # ====================================================================
+
 <IfModule mod_rewrite.c>
     RewriteEngine On
     RewriteBase /api/
 
-    # Allow direct execution of existing PHP files (diag.php, test.php, etc.)
+    # 1. Do not rewrite if already targeting index.php (prevents 502 redirect loops)
+    RewriteRule ^index\.php$ - [L]
+
+    # 2. Allow existing physical files (diag.php, test.php, etc.) to execute directly
     RewriteCond %{REQUEST_FILENAME} -f [OR]
     RewriteCond %{REQUEST_FILENAME} -d
     RewriteRule ^ - [L]
 
-    # Route all other API endpoints to index.php
+    # 3. Route all other API requests to index.php
     RewriteRule ^(.*)$ index.php [QSA,L]
 </IfModule>

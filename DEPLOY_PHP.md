@@ -44,30 +44,49 @@ public_html/
 
 ---
 
-## ⚙️ Шаг 2. Настройка `api/config.php`
+## ⚙️ Шаг 2. Настройка файла `.env`
 
-Откройте файл `api/config.php` в файловом менеджере хостинга и укажите ваши актуальные доступы:
+Бэкенд PHP автоматически находит и загружает настройки из файла `.env` в корне сайта (`public_html/.env`) или в папке `api/.env`.
 
-```php
-// 1. Подключение к MySQL
-define('DB_HOST', 'mysql.hosting.nic.ru'); // Адрес сервера MySQL хостинга
-define('DB_PORT', '3306');
-define('DB_NAME', 'bau7824897_db');        // Имя базы данных
-define('DB_USER', 'bau7824897_mysql');     // Пользователь базы
-define('DB_PASS', 'ВашПарольОтБазы');       // Пароль базы данных
+Создайте файл `.env` в корне сайта со следующим содержимым:
 
-// 2. Telegram Бот
-define('TELEGRAM_BOT_TOKEN', 'ВАШ_ТОКЕН_БОТА');
-define('TELEGRAM_CHAT_ID', '-1002345678901'); // ID админ-чата для получения заказов
-define('TELEGRAM_API_PROXY', '');             // Прокси (если нужен)
+```env
+# App General
+APP_NAME="BauSquad"
+APP_ENV="production"
+APP_URL="https://www.bausquad.org"
+SECRET_KEY="f8d9a2b7c4e109831a"
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+REFRESH_TOKEN_EXPIRE_DAYS=7
 
-// 3. Почта SMTP (для отправки кодов регистрации)
-define('SMTP_HOST', 'mail.nic.ru');          // или smtp.gmail.com / smtp.yandex.ru
-define('SMTP_PORT', 465);                    // 465 для SSL или 587 для TLS
-define('SMTP_USER', 'bausquadresponse@bausquad.org');
-define('SMTP_PASS', 'ПарольОтПочты');
-define('SMTP_FROM', 'BauSquad <bausquadresponse@bausquad.org>');
+# Server
+PORT=3000
+HOST="0.0.0.0"
+
+# MySQL Database Configuration
+MYSQL_HOST="mysql.hosting.nic.ru"
+MYSQL_PORT=3306
+MYSQL_DATABASE="bau7824897_db"
+MYSQL_USER="bau7824897_mysql"
+MYSQL_PASSWORD="AhTFV6g/"
+
+# Telegram Bot API Settings
+TELEGRAM_BOT_TOKEN="8655510215:AAHD2y49HbYoXn1lXVbu81sf77Ng9rUPuW8"
+TELEGRAM_ADMIN_CHAT_ID="-1003817358324"
+TELEGRAM_API_PROXY="https://odd.gooilipok2.workers.dev/"
+
+# SMTP Mailer Settings
+SMTP_HOST="mail.nic.ru"
+SMTP_PORT=465
+SMTP_USER="bausquadresponse@bausquad.org"
+SMTP_PASSWORD="I*D8J2{W51zG(a^f"
+SMTP_FROM="BauSquad <bausquadresponse@bausquad.org>"
+
+# CORS Origins
+ALLOWED_ORIGINS="http://localhost:3000,https://bausquad.org,https://www.bausquad.org,https://bausquad.ru,https://www.bausquad.ru"
 ```
+
+*Все настройки подтягиваются автоматически без необходимости редактировать PHP файлы вручную.*
 
 ---
 

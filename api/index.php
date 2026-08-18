@@ -27,24 +27,31 @@ $input = getJsonInput();
 // 1. HEALTH & DIAGNOSTICS
 // ==========================================
 if ($path === '/health' || $path === '/ping' || $path === '') {
+    global $loadedEnvFile;
     jsonResponse([
         'status' => 'ok',
-        'app' => 'BauSquad (PHP Backend)',
+        'app' => APP_NAME . ' (PHP Backend)',
+        'env' => APP_ENV,
+        'app_url' => APP_URL,
         'timestamp' => date('c'),
         'php_version' => PHP_VERSION,
+        'env_loaded_from' => $loadedEnvFile ?: 'built-in defaults / system environment',
         'mysql' => [
             'connected' => ($pdo !== null),
             'database' => DB_NAME,
-            'host' => DB_HOST
+            'host' => DB_HOST,
+            'port' => DB_PORT
         ],
         'telegram' => [
             'bot_token_set' => !empty(TELEGRAM_BOT_TOKEN),
-            'chat_id_set' => !empty(TELEGRAM_CHAT_ID)
+            'chat_id_set' => !empty(TELEGRAM_CHAT_ID),
+            'proxy' => TELEGRAM_API_PROXY ?: 'direct'
         ],
         'smtp' => [
             'host' => SMTP_HOST,
             'port' => SMTP_PORT,
-            'user' => SMTP_USER
+            'user' => SMTP_USER,
+            'from' => SMTP_FROM
         ]
     ]);
 }

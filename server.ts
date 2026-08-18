@@ -900,8 +900,10 @@ async function sendEmailNotification(to: string, subject: string, htmlContent: s
 
 // JWT helper
 function generateToken(userId: string, role: string, type: 'access' | 'refresh') {
-  const secret = process.env.SECRET_KEY || 'bau_squad_secret_key';
-  const expires = type === 'access' ? 30 * 60 * 1000 : 7 * 24 * 3600 * 1000;
+  const secret = process.env.SECRET_KEY || 'f8d9a2b7c4e109831a';
+  const accessMins = process.env.ACCESS_TOKEN_EXPIRE_MINUTES ? parseInt(process.env.ACCESS_TOKEN_EXPIRE_MINUTES, 10) : 30;
+  const refreshDays = process.env.REFRESH_TOKEN_EXPIRE_DAYS ? parseInt(process.env.REFRESH_TOKEN_EXPIRE_DAYS, 10) : 7;
+  const expires = type === 'access' ? accessMins * 60 * 1000 : refreshDays * 24 * 3600 * 1000;
   return Buffer.from(JSON.stringify({ userId, role, type, exp: Date.now() + expires, secret })).toString('base64');
 }
 

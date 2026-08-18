@@ -1,47 +1,127 @@
 <?php
 /**
  * BauSquad — PHP Backend Configuration
- * Настройки подключения к базе данных MySQL, Telegram Bot API и почте SMTP
+ * Автоматическая загрузка и чтение параметров из .env файла
  */
 
-// 1. Database Configuration (MySQL)
-define('DB_HOST', getenv('MYSQL_HOST') ?: 'mysql.hosting.nic.ru');
-define('DB_PORT', getenv('MYSQL_PORT') ?: '3306');
-define('DB_NAME', getenv('MYSQL_DATABASE') ?: 'bau7824897_db');
-define('DB_USER', getenv('MYSQL_USER') ?: 'bau7824897_mysql');
-define('DB_PASS', getenv('MYSQL_PASSWORD') ?: 'AhTFV6g/');
+// 1. Автоматический поиск и парсинг .env файла
+function loadEnv($customPath = null): ?string {
+    $candidatePaths = array_filter([
+        $customPath,
+        __DIR__ . '/../.env',
+        __DIR__ . '/.env',
+        isset($_SERVER['DOCUMENT_ROOT']) ? rtrim($_SERVER['DOCUMENT_ROOT'], '/') . '/.env' : null,
+        dirname(__DIR__, 2) . '/.env',
+        getcwd() . '/.env'
+    ]);
 
-// 2. Telegram Bot Configuration
-define('TELEGRAM_BOT_TOKEN', getenv('TELEGRAM_BOT_TOKEN') ?: '8028795777:AAGFz2YxYm4G_0W8tWqB3rF7M-3t9Y0g-tM');
-define('TELEGRAM_CHAT_ID', getenv('TELEGRAM_ADMIN_CHAT_ID') ?: (getenv('TELEGRAM_CHAT_ID') ?: '-1002345678901'));
-define('TELEGRAM_API_PROXY', getenv('TELEGRAM_API_PROXY') ?: '');
+    $loadedPath = null;
+    foreach ($candidatePaths as $path) {
+        if (!empty($path) && file_exists($path) && is_readable($path)) {
+            $lines = @file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            if ($lines !== false) {
+                foreach ($lines as $line) {
+                    $line = trim($line);
+                    if ($line === '' || strpos($line, '#') === 0 || strpos($line, ';') === 0) {
+                        continue;
+                    }
 
-// 3. SMTP / Mailer Configuration
-define('SMTP_HOST', getenv('SMTP_HOST') ?: 'mail.nic.ru');
-define('SMTP_PORT', getenv('SMTP_PORT') ?: 465);
-define('SMTP_USER', getenv('SMTP_USER') ?: 'bausquadresponse@bausquad.org');
-define('SMTP_PASS', getenv('SMTP_PASSWORD') ?: (getenv('SMTP_PASS') ?: 'I*D8J2{W51zG(a^f'));
-define('SMTP_FROM', getenv('SMTP_FROM') ?: 'BauSquad <bausquadresponse@bausquad.org>');
+                    if (strpos($line, '=') !== false) {
+                        list($key, $val) = explode('=', $line, 2);
+                        $key = trim($key);
+                        $val = trim($val);
 
-// 4. Security & JWT
-define('JWT_SECRET', getenv('SECRET_KEY') ?: 'bau_squad_php_secret_key_2026');
-define('JWT_ACCESS_EXPIRY', 1800); // 30 mins
-define('JWT_REFRESH_EXPIRY', 7 * 86400); // 7 days
+                        // Снятие внешних кавычек (одинарных или двойных)
+                        if ((strpos($val, '"') === 0 && substr($val, -1) === '"') ||
+                            (strpos($val, "'") === 0 && substr($val, -1) === "'")) {
+                            $val = substr($val, 1, -1);
+                        }
 
-// 5. Uploads Directory
+                        if (!empty($key)) {
+                            putenv("{$key}={$val}");
+                            $_ENV[$key] = $val;
+                            $_SERVER[$key] = $val;
+                        }
+                    }
+                }
+                $loadedPath = $path;
+                break;
+            }
+        }
+    }
+    return $loadedPath;
+}
+
+function env(string $key, $default = null) {
+    $val = getenv($key);
+    if ($val !== false && $val !== null && $val !== '') {
+        return $val;
+    }
+    if (isset($_ENV[$key]) && $_ENV[$key] !== '') {
+        return $_ENV[$key];
+    }
+    if (isset($_SERVER[$key]) && $_SERVER[$key] !== '') {
+        return $_SERVER[$key];
+    }
+    return $default;
+}
+
+// Загружаем .env
+$loadedEnvFile = loadEnv();
+
+// 2. Основные параметры приложения
+define('APP_NAME', env('APP_NAME', 'BauSquad'));
+define('APP_ENV', env('APP_ENV', 'production'));
+define('APP_URL', env('APP_URL', 'https://www.bausquad.org'));
+
+// 3. Database Configuration (MySQL)
+define('DB_HOST', env('MYSQL_HOST', 'mysql.hosting.nic.ru'));
+define('DB_PORT', env('MYSQL_PORT', '3306'));
+define('DB_NAME', env('MYSQL_DATABASE', 'bau7824897_db'));
+define('DB_USER', env('MYSQL_USER', 'bau7824897_mysql'));
+define('DB_PASS', env('MYSQL_PASSWORD', 'AhTFV6g/'));
+
+// 4. Telegram Bot API Settings
+define('TELEGRAM_BOT_TOKEN', env('TELEGRAM_BOT_TOKEN', '8655510215:AAHD2y49HbYoXn1lXVbu81sf77Ng9rUPuW8'));
+define('TELEGRAM_CHAT_ID', env('TELEGRAM_ADMIN_CHAT_ID', env('TELEGRAM_CHAT_ID', '-1003817358324')));
+define('TELEGRAM_API_PROXY', env('TELEGRAM_API_PROXY', 'https://odd.gooilipok2.workers.dev/'));
+
+// 5. SMTP Mailer Settings
+define('SMTP_HOST', env('SMTP_HOST', 'mail.nic.ru'));
+define('SMTP_PORT', (int)env('SMTP_PORT', 465));
+define('SMTP_USER', env('SMTP_USER', 'bausquadresponse@bausquad.org'));
+define('SMTP_PASS', env('SMTP_PASSWORD', env('SMTP_PASS', 'I*D8J2{W51zG(a^f')));
+define('SMTP_FROM', env('SMTP_FROM', 'BauSquad <bausquadresponse@bausquad.org>'));
+
+// 6. Security & JWT Settings
+define('JWT_SECRET', env('SECRET_KEY', 'f8d9a2b7c4e109831a'));
+define('JWT_ACCESS_EXPIRY', (int)env('ACCESS_TOKEN_EXPIRE_MINUTES', 30) * 60); // в секундах
+define('JWT_REFRESH_EXPIRY', (int)env('REFRESH_TOKEN_EXPIRE_DAYS', 7) * 86400); // в секундах
+
+// 7. CORS Origins
+define('ALLOWED_ORIGINS', env('ALLOWED_ORIGINS', 'http://localhost:3000,https://bausquad.org,https://www.bausquad.org,https://bausquad.ru,https://www.bausquad.ru'));
+
+// 8. Uploads Directory
 define('UPLOADS_DIR', __DIR__ . '/../uploads/');
 if (!is_dir(UPLOADS_DIR)) {
     @mkdir(UPLOADS_DIR, 0755, true);
 }
 
-// 6. Global CORS and JSON Headers
+// 9. Global CORS and JSON Headers
 function sendCorsHeaders() {
     $origin = $_SERVER['HTTP_ORIGIN'] ?? '*';
-    header("Access-Control-Allow-Origin: {$origin}");
+    $allowedList = array_map('trim', explode(',', ALLOWED_ORIGINS));
+
+    if (in_array($origin, $allowedList) || in_array('*', $allowedList) || empty($_SERVER['HTTP_ORIGIN'])) {
+        header("Access-Control-Allow-Origin: {$origin}");
+    } else {
+        header("Access-Control-Allow-Origin: " . ($allowedList[0] ?? '*'));
+    }
+
     header("Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS");
     header("Access-Control-Allow-Headers: Origin, X-Requested-With, Content-Type, Accept, Authorization");
     header("Access-Control-Allow-Credentials: true");
-    
+
     if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
         http_response_code(200);
         exit();

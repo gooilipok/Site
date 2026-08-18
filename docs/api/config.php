@@ -146,4 +146,3 @@ function getJsonInput() {
     $parsed = json_decode($raw, true);
     return is_array($parsed) ? array_merge($_POST, $parsed) : $_POST;
 }
-

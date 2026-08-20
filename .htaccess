@@ -13,8 +13,8 @@
     RewriteCond %{REQUEST_FILENAME} -d
     RewriteRule ^ - [L]
 
-    # 2. Route all other /api/* requests to api/index.php
-    RewriteRule ^api(/.*)?$ api/index.php [QSA,L]
+    # 2. Route all /api/* requests directly to root-level api.php
+    RewriteRule ^api(/.*)?$ api.php [QSA,L]
 
     # 3. Fallback all frontend routes to index.html for React Router
     RewriteRule ^ index.html [QSA,L]

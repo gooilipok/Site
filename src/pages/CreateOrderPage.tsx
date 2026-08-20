@@ -121,9 +121,12 @@ export const CreateOrderPage: React.FC = () => {
 
       const payload = {
         title,
+        subject: title,
+        work_type: 'Чертеж / Проект',
         description,
-        deadline,
+        deadline: deadline || 'Не указан',
         price: 'На обсуждении',
+        client_price: 'На обсуждении',
         contact,
         files: encodedFiles,
         terms_accepted: isAuthenticated ? true : termsAccepted,

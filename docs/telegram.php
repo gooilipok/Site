@@ -7,27 +7,34 @@
 require_once __DIR__ . '/config.php';
 
 function formatTelegramOrderCard(array $data): string {
-    $orderHeader = !empty($data['order_id'])
-        ? "📋 <b>Заказ №{$data['order_id']}</b>\n\n"
-        : "📋 <b>Новый заказ</b>\n\n";
+    $orderId = !empty($data['order_id']) ? $data['order_id'] : 'Новый';
+    $orderHeader = "📋 <b>Заказ #{$orderId}</b>\n\n";
 
     $user = $data['user'] ?? [];
-    $firstName = $user['first_name'] ?? 'Клиент';
-    $lastName = !empty($user['last_name']) ? " {$user['last_name']}" : '';
-    $username = !empty($user['username']) ? " (@" . ltrim($user['username'], '@') . ")" : '';
+    $firstName = htmlspecialchars($user['first_name'] ?? ($user['username'] ?? 'Клиент'), ENT_QUOTES, 'UTF-8');
+    $userEmail = !empty($user['email']) ? " (" . htmlspecialchars($user['email'], ENT_QUOTES, 'UTF-8') . ")" : '';
+    $tgHandle = !empty($user['telegram']) ? " [@" . ltrim($user['telegram'], '@') . "]" : (!empty($user['username']) && $user['username'] !== $firstName ? " (@" . ltrim($user['username'], '@') . ")" : '');
 
-    $userBlock = "👤 <b>Заказчик:</b>\n{$firstName}{$lastName}{$username}\n\n";
-    $subject = htmlspecialchars($data['subject'] ?? 'Без темы', ENT_QUOTES, 'UTF-8');
-    $description = htmlspecialchars($data['description'] ?? '', ENT_QUOTES, 'UTF-8');
+    $userBlock = "👤 <b>Заказчик:</b> {$firstName}{$userEmail}{$tgHandle}\n\n";
+    $subject = htmlspecialchars($data['subject'] ?? ($data['title'] ?? 'Без темы'), ENT_QUOTES, 'UTF-8');
+    $workType = htmlspecialchars($data['work_type'] ?? 'Чертеж / Проект', ENT_QUOTES, 'UTF-8');
+    $description = htmlspecialchars($data['description'] ?? 'Без описания', ENT_QUOTES, 'UTF-8');
     $deadline = htmlspecialchars($data['deadline'] ?? 'Не указан', ENT_QUOTES, 'UTF-8');
     $contact = htmlspecialchars($data['contact'] ?? 'Не указан', ENT_QUOTES, 'UTF-8');
+    $price = htmlspecialchars($data['price'] ?? 'На обсуждении', ENT_QUOTES, 'UTF-8');
+    $filesCount = !empty($data['files_count']) ? (int)$data['files_count'] : 0;
+
+    $filesBlock = ($filesCount > 0) ? "\n\n📎 <b>Прикреплено файлов:</b> {$filesCount} шт." : "";
 
     return $orderHeader .
         $userBlock .
-        "📘 <b>Предмет:</b>\n{$subject}\n\n" .
+        "📘 <b>Предмет / Тема:</b>\n{$subject}\n\n" .
+        "📐 <b>Тип работы:</b>\n{$workType}\n\n" .
         "📝 <b>Описание:</b>\n{$description}\n\n" .
-        "⏰ <b>Срок:</b>\n{$deadline}\n\n" .
-        "📞 <b>Контакты:</b>\n{$contact}";
+        "⏰ <b>Срок (дедлайн):</b>\n{$deadline}\n\n" .
+        "💰 <b>Бюджет:</b>\n{$price}\n\n" .
+        "📞 <b>Контакты:</b>\n{$contact}" .
+        $filesBlock;
 }
 
 function getMimeTypeSafely($filePath, $default = 'application/octet-stream'): string {

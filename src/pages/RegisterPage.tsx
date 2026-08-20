@@ -55,6 +55,8 @@ export const RegisterPage: React.FC = () => {
 
     if (!result.success) {
       setError(result.error || 'Ошибка при отправке данных');
+    } else if (result.autoLoggedIn) {
+      navigate('/profile');
     } else {
       setStep('verification');
     }

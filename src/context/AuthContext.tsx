@@ -2,6 +2,12 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, AuthTokens, UserRole } from '../types';
 import { apiFetch } from '../utils/api';
 
+export interface AuthRegisterResult {
+  success: boolean;
+  error?: string;
+  autoLoggedIn?: boolean;
+}
+
 interface AuthContextType {
   user: User | null;
   tokens: AuthTokens | null;
@@ -15,7 +21,7 @@ interface AuthContextType {
     terms_accepted: boolean;
     privacy_accepted: boolean;
     consent_accepted: boolean;
-  }) => Promise<{ success: boolean; error?: string }>;
+  }) => Promise<AuthRegisterResult>;
   verifyEmailCode: (email: string, code: string) => Promise<{ success: boolean; error?: string }>;
   updateProfile: (username?: string, newPassword?: string, telegramHandle?: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
@@ -112,7 +118,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: false, error: data.error || 'Ошибка регистрации' };
       }
 
-      return { success: true };
+      if (data.user && data.tokens) {
+        saveAuthSession(data.user, data.tokens);
+        return { success: true, autoLoggedIn: true };
+      }
+
+      return { success: true, autoLoggedIn: false };
     } catch {
       return { success: false, error: 'Ошибка соединения с сервером' };
     }

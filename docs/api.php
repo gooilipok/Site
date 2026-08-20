@@ -191,11 +191,118 @@ try {
         jsonResponse($mailRes, !empty($mailRes['success']) ? 200 : 500);
     }
 
+    // Save uploaded files helper
+    function saveOrderUploads(array $rawFiles, int $orderId): array {
+        $uploadsDir = rtrim(UPLOADS_DIR, '/');
+        if (!is_dir($uploadsDir)) {
+            @mkdir($uploadsDir, 0755, true);
+        }
+
+        $savedFiles = [];
+        foreach ($rawFiles as $idx => $f) {
+            $name = basename($f['name'] ?? ("file_" . ($idx + 1)));
+            $mime = $f['type'] ?? 'application/octet-stream';
+            $size = (int)($f['size'] ?? 0);
+            $data = $f['data'] ?? ($f['content'] ?? ($f['base64'] ?? ''));
+
+            if (!empty($data) && preg_match('#^data:([^;]+);base64,(.+)$#s', $data, $matches)) {
+                $mime = $matches[1];
+                $decoded = base64_decode($matches[2]);
+                if ($decoded !== false) {
+                    $ext = pathinfo($name, PATHINFO_EXTENSION);
+                    if (empty($ext)) {
+                        $extMap = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'application/pdf' => 'pdf', 'application/zip' => 'zip'];
+                        $ext = $extMap[$mime] ?? 'bin';
+                        $name .= '.' . $ext;
+                    }
+                    $safeName = "order_{$orderId}_" . time() . "_{$idx}_" . preg_replace('/[^a-zA-Z0-9_\.-]/', '_', $name);
+                    $fullPath = $uploadsDir . '/' . $safeName;
+                    if (@file_put_contents($fullPath, $decoded)) {
+                        $savedFiles[] = [
+                            'id' => "file-{$orderId}-{$idx}",
+                            'name' => $name,
+                            'size' => strlen($decoded),
+                            'type' => $mime,
+                            'path' => $fullPath,
+                            'url' => APP_URL . '/uploads/' . $safeName,
+                            'uploaded_at' => date('c')
+                        ];
+                    }
+                }
+            } elseif (!empty($f['path']) && file_exists($f['path'])) {
+                $savedFiles[] = $f;
+            } elseif (!empty($name)) {
+                $savedFiles[] = [
+                    'id' => "file-{$orderId}-{$idx}",
+                    'name' => $name,
+                    'size' => $size,
+                    'type' => $mime,
+                    'uploaded_at' => date('c')
+                ];
+            }
+        }
+        return $savedFiles;
+    }
+
+    function formatOrderRecord(array $r, ?PDO $pdo = null): array {
+        $id = (int)($r['id'] ?? 0);
+        $rawDesc = (string)($r['description'] ?? '');
+        
+        $subject = trim($r['subject'] ?? ($r['title'] ?? ''));
+        $workType = trim($r['work_type'] ?? '');
+        $deadline = trim($r['deadline'] ?? '');
+        $contact = trim($r['contact'] ?? '');
+        $priceStr = trim((string)($r['price'] ?? ($r['client_price'] ?? '')));
+        
+        // If columns were packed into description
+        if (empty($subject) && strpos($rawDesc, "Предмет:") !== false) {
+            if (preg_match('#Предмет:\s*([^\n]+)#u', $rawDesc, $m)) $subject = trim($m[1]);
+            if (empty($workType) && preg_match('#Тип:\s*([^\n]+)#u', $rawDesc, $m)) $workType = trim($m[1]);
+            if (empty($deadline) && preg_match('#Дедлайн:\s*([^\n]+)#u', $rawDesc, $m)) $deadline = trim($m[1]);
+            if (empty($contact) && preg_match('#Контакты:\s*([^\n]+)#u', $rawDesc, $m)) $contact = trim($m[1]);
+        }
+        
+        if (empty($subject)) $subject = 'Учебный проект';
+        if (empty($workType)) $workType = 'Чертеж / Проект';
+        
+        $files = [];
+        if (!empty($r['files'])) {
+            $decoded = @json_decode($r['files'], true);
+            if (is_array($decoded)) $files = $decoded;
+        }
+
+        $rawPrice = $r['price'] ?? ($r['client_price'] ?? 'На обсуждении');
+        $numericPrice = is_numeric($rawPrice) ? (float)$rawPrice : 0;
+        
+        return [
+            'id' => (string)$id,
+            'order_number' => 'ORD-' . str_pad((string)$id, 5, '0', STR_PAD_LEFT),
+            'client_id' => 'usr-' . ($r['client_id'] ?? 1),
+            'user_id' => (string)($r['client_id'] ?? 1),
+            'user_login' => $r['user_login'] ?? ($r['client_name'] ?? 'Клиент'),
+            'user_email' => $r['user_email'] ?? '',
+            'title' => $subject,
+            'subject' => $subject,
+            'work_type' => $workType,
+            'description' => $rawDesc,
+            'deadline' => $deadline ?: 'Не указан',
+            'contact' => $contact ?: 'Не указан',
+            'price' => $numericPrice > 0 ? (string)$numericPrice . ' ₽' : ($priceStr ?: 'На обсуждении'),
+            'client_price' => $priceStr ?: 'На обсуждении',
+            'executer_price' => $r['executer_price'] ?? '',
+            'status' => $r['status'] ?? 'new',
+            'files' => $files,
+            'files_count' => count($files),
+            'created_at' => $r['created_at'] ?? date('c'),
+            'updated_at' => $r['updated_at'] ?? date('c')
+        ];
+    }
+
     // ==========================================\
     // 2. AUTHENTICATION
     // ==========================================\
 
-    // Register Step 1: Send verification code to email
+    // Register: Instant secure creation with legal agreements & welcome email
     if (($path === '/auth/register' || $path === '/register') && $method === 'POST') {
         $email = strtolower(trim($input['email'] ?? ''));
         $username = trim($input['username'] ?? '');
@@ -205,7 +312,7 @@ try {
         $consentAccepted = !empty($input['consent_accepted']);
 
         if (empty($email) || empty($username) || empty($password)) {
-            jsonResponse(['error' => 'Заполните все обязательные поля'], 400);
+            jsonResponse(['error' => 'Заполните все обязательные поля (email, имя, пароль)'], 400);
         }
 
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -228,8 +335,49 @@ try {
             }
         }
 
+        $userId = null;
+        $now = date('Y-m-d H:i:s');
+
+        if ($pdo) {
+            $hashedPassword = password_hash($password, PASSWORD_BCRYPT);
+            $cols = getTableColumns($pdo, 'users');
+
+            $insertCols = ['login', 'email', 'password_hash', 'role', 'account_status', 'is_verified', 'registration_date'];
+            $placeholders = ['?', '?', '?', "'customer'", "'active'", '1', '?'];
+            $params = [$username ?: explode('@', $email)[0], $email, $hashedPassword, $now];
+
+            if (in_array('user_agreement', $cols, true)) {
+                $insertCols[] = 'user_agreement';
+                $insertCols[] = 'user_agreement_date';
+                $placeholders[] = '1';
+                $placeholders[] = '?';
+                $params[] = $now;
+            }
+            if (in_array('privacy_agreement', $cols, true)) {
+                $insertCols[] = 'privacy_agreement';
+                $insertCols[] = 'privacy_agreement_date';
+                $placeholders[] = '1';
+                $placeholders[] = '?';
+                $params[] = $now;
+            }
+            if (in_array('processing_personal_data_agreement', $cols, true)) {
+                $insertCols[] = 'processing_personal_data_agreement';
+                $insertCols[] = 'processing_personal_data_agreement_date';
+                $placeholders[] = '1';
+                $placeholders[] = '?';
+                $params[] = $now;
+            }
+
+            $sql = "INSERT INTO users (" . implode(', ', $insertCols) . ") VALUES (" . implode(', ', $placeholders) . ")";
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($params);
+            $userId = (int)$pdo->lastInsertId();
+        } else {
+            $userId = time();
+        }
+
         $code = (string)random_int(100000, 999999);
-        $expiresAt = date('Y-m-d H:i:s', time() + 900); // 15 минут
+        $expiresAt = date('Y-m-d H:i:s', time() + 900);
 
         if ($pdo) {
             try {
@@ -238,21 +386,52 @@ try {
             } catch (\Throwable $e) {}
         }
 
-        $mailSubject = "Код подтверждения регистрации — BauSquad";
+        // Send welcome email
+        $mailSubject = "Добро пожаловать в BauSquad!";
         $mailHtml = "<div style='font-family:sans-serif;max-width:540px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;'>
             <h2 style='color:#0f172a;margin-top:0;'>Добро пожаловать в BauSquad!</h2>
-            <p style='color:#475569;font-size:15px;'>Для завершения регистрации на платформе введите 6-значный код подтверждения:</p>
-            <div style='background:#f8fafc;padding:16px;text-align:center;border-radius:8px;font-size:32px;font-weight:bold;letter-spacing:6px;color:#c5a059;margin:20px 0;'>{$code}</div>
-            <p style='color:#94a3b8;font-size:13px;'>Код действителен в течение 15 минут. Если вы не запрашивали регистрацию, проигнорируйте это письмо.</p>
+            <p style='color:#475569;font-size:15px;'>Вы успешно зарегистрировались на платформе помощи в проектировании и чертежах <b>BauSquad</b>.</p>
+            <p style='color:#475569;font-size:14px;'>Логин: <b>" . htmlspecialchars($username) . "</b><br>Email: <b>" . htmlspecialchars($email) . "</b></p>
+            <p style='color:#94a3b8;font-size:13px;'>Если у вас возникнут вопросы, обращайтесь в поддержку: support@bausquad.org</p>
         </div>";
 
         sendEmail($email, $mailSubject, $mailHtml);
 
-        jsonResponse([
-            'message' => 'Код подтверждения успешно отправлен на ваш email',
+        $accessToken = generateJWT($userId, 'customer', 'access');
+        $refreshToken = generateJWT($userId, 'customer', 'refresh');
+
+        $userObj = [
+            'id' => 'usr-' . $userId,
             'email' => $email,
+            'username' => $username,
+            'role' => 'customer',
+            'account_status' => 'active',
+            'is_verified' => true,
+            'created_at' => date('c'),
+            'telegram_handle' => '',
+            'tg_id' => '',
+            'agreements' => [
+                'terms_accepted' => true,
+                'terms_accepted_at' => date('c'),
+                'privacy_accepted' => true,
+                'privacy_accepted_at' => date('c'),
+                'consent_accepted' => true,
+                'consent_accepted_at' => date('c')
+            ],
+            'order_count' => 0
+        ];
+
+        jsonResponse([
+            'message' => 'Регистрация успешно завершена',
+            'user' => $userObj,
+            'tokens' => [
+                'access_token' => $accessToken,
+                'refresh_token' => $refreshToken,
+                'token_type' => 'Bearer',
+                'expires_in' => JWT_ACCESS_EXPIRY
+            ],
             'debug_code' => (APP_ENV !== 'production') ? $code : null
-        ]);
+        ], 201);
     }
 
     // Register Step 2: Verify code and create user
@@ -540,59 +719,127 @@ try {
     // Create Order
     if ($path === '/orders' && $method === 'POST') {
         $authUser = getAuthenticatedUser($pdo);
-        $clientId = 1; // Default fallback client ID from database dump
+        $clientId = 1;
         if ($authUser) {
             $clientId = (int)preg_replace('/\D/', '', $authUser['id']);
             if ($clientId <= 0) $clientId = 1;
         }
 
-        $subject = trim($input['subject'] ?? 'Без темы');
-        $workType = trim($input['work_type'] ?? 'Чертеж');
+        $subject = trim($input['subject'] ?? ($input['title'] ?? 'Без темы'));
+        $title = $subject;
+        $workType = trim($input['work_type'] ?? 'Чертеж / Проект');
         $description = trim($input['description'] ?? '');
-        $deadline = trim($input['deadline'] ?? '');
+        $deadline = trim($input['deadline'] ?? 'Не указан');
         $contact = trim($input['contact'] ?? '');
-        $price = (float)($input['price'] ?? 0);
+        $price = trim((string)($input['price'] ?? ($input['client_price'] ?? 'На обсуждении')));
+        $rawFiles = is_array($input['files'] ?? null) ? $input['files'] : [];
 
         $orderId = null;
+        $now = date('Y-m-d H:i:s');
+
         if ($pdo) {
             $cols = getTableColumns($pdo, 'orders');
-            $now = date('Y-m-d H:i:s');
 
-            if (in_array('subject', $cols, true) && in_array('work_type', $cols, true)) {
-                $stmt = $pdo->prepare("INSERT INTO orders (client_id, subject, work_type, description, deadline, contact, price, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)");
-                $stmt->execute([$clientId, $subject, $workType, $description, $deadline, $contact, $price, $now, $now]);
-            } else {
-                $stmt = $pdo->prepare("INSERT INTO orders (client_id, description, status, created_at) VALUES (?, ?, 'pending', ?)");
-                $stmt->execute([$clientId, "Предмет: {$subject}\nТип: {$workType}\nОписание: {$description}\nДедлайн: {$deadline}\nКонтакты: {$contact}", $now]);
+            // Build dynamic fields matching actual table schema
+            $fields = ['client_id', 'description', 'status', 'created_at', 'updated_at'];
+            $placeholders = ['?', '?', "'new'", '?', '?'];
+            $params = [$clientId, $description, $now, $now];
+
+            if (in_array('subject', $cols, true)) {
+                $fields[] = 'subject';
+                $placeholders[] = '?';
+                $params[] = $subject;
             }
-            $orderId = $pdo->lastInsertId();
+            if (in_array('title', $cols, true)) {
+                $fields[] = 'title';
+                $placeholders[] = '?';
+                $params[] = $title;
+            }
+            if (in_array('work_type', $cols, true)) {
+                $fields[] = 'work_type';
+                $placeholders[] = '?';
+                $params[] = $workType;
+            }
+            if (in_array('deadline', $cols, true)) {
+                $fields[] = 'deadline';
+                $placeholders[] = '?';
+                $params[] = $deadline;
+            }
+            if (in_array('contact', $cols, true)) {
+                $fields[] = 'contact';
+                $placeholders[] = '?';
+                $params[] = $contact;
+            }
+            if (in_array('price', $cols, true)) {
+                $fields[] = 'price';
+                $placeholders[] = '?';
+                $params[] = $price;
+            }
+            if (in_array('client_price', $cols, true)) {
+                $fields[] = 'client_price';
+                $placeholders[] = '?';
+                $params[] = $price;
+            }
+
+            // Fallback composite description if dedicated columns don't exist
+            if (!in_array('subject', $cols, true) || !in_array('deadline', $cols, true)) {
+                $composite = "Предмет: {$subject}\nТип: {$workType}\nОписание: {$description}\nДедлайн: {$deadline}\nКонтакты: {$contact}\nБюджет: {$price}";
+                $params[1] = $composite; // update description param
+            }
+
+            $sql = "INSERT INTO orders (" . implode(', ', $fields) . ") VALUES (" . implode(', ', $placeholders) . ")";
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($params);
+            $orderId = (int)$pdo->lastInsertId();
         } else {
             $orderId = time();
+        }
+
+        // Process and save uploaded files
+        $savedFiles = saveOrderUploads($rawFiles, $orderId);
+
+        // Update files JSON in orders table if column exists
+        if ($pdo && !empty($savedFiles)) {
+            $cols = getTableColumns($pdo, 'orders');
+            if (in_array('files', $cols, true)) {
+                try {
+                    $stmt = $pdo->prepare("UPDATE orders SET files = ? WHERE id = ?");
+                    $stmt->execute([json_encode($savedFiles, JSON_UNESCAPED_UNICODE), $orderId]);
+                } catch (\Throwable $e) {}
+            }
         }
 
         // Send structured Telegram Notification
         $orderData = [
             'order_id' => $orderId,
             'subject' => $subject,
+            'title' => $title,
+            'work_type' => $workType,
             'description' => $description,
             'deadline' => $deadline,
             'contact' => $contact,
+            'price' => $price,
+            'files_count' => count($savedFiles),
             'user' => [
                 'first_name' => $authUser['username'] ?? ($input['name'] ?? 'Клиент'),
-                'username' => $authUser['telegram_handle'] ?? ''
+                'username' => $authUser['username'] ?? '',
+                'email' => $authUser['email'] ?? '',
+                'telegram' => $authUser['telegram_handle'] ?? ''
             ]
         ];
 
-        sendTelegramOrder($orderData, $input['files'] ?? []);
+        sendTelegramOrder($orderData, $savedFiles);
 
         jsonResponse([
             'message' => 'Заказ успешно создан и передан менеджерам',
             'order_id' => (string)$orderId,
-            'status' => 'pending'
+            'order_number' => 'ORD-' . str_pad((string)$orderId, 5, '0', STR_PAD_LEFT),
+            'status' => 'new',
+            'files_count' => count($savedFiles)
         ], 201);
     }
 
-    // List Orders
+    // List Orders for current user
     if ($path === '/orders' && $method === 'GET') {
         $authUser = getAuthenticatedUser($pdo);
         if (!$authUser) {
@@ -609,19 +856,7 @@ try {
             $rows = $stmt->fetchAll();
 
             foreach ($rows as $r) {
-                $orders[] = [
-                    'id' => (string)$r['id'],
-                    'order_number' => 'ORD-' . str_pad($r['id'], 5, '0', STR_PAD_LEFT),
-                    'subject' => $r['subject'] ?? 'Учебный проект',
-                    'work_type' => $r['work_type'] ?? 'Чертеж',
-                    'description' => $r['description'] ?? '',
-                    'deadline' => $r['deadline'] ?? '',
-                    'contact' => $r['contact'] ?? '',
-                    'price' => (float)($r['price'] ?? 0),
-                    'status' => $r['status'] ?? 'pending',
-                    'created_at' => $r['created_at'] ?? date('c'),
-                    'files_count' => 0
-                ];
+                $orders[] = formatOrderRecord($r, $pdo);
             }
         }
 
@@ -648,7 +883,7 @@ try {
         if ($pdo) {
             $stats['total_users'] = (int)$pdo->query("SELECT COUNT(*) FROM users")->fetchColumn();
             $stats['total_orders'] = (int)$pdo->query("SELECT COUNT(*) FROM orders")->fetchColumn();
-            $stats['pending_orders'] = (int)$pdo->query("SELECT COUNT(*) FROM orders WHERE status = 'pending'")->fetchColumn();
+            $stats['pending_orders'] = (int)$pdo->query("SELECT COUNT(*) FROM orders WHERE status IN ('pending', 'new', 'in_progress')")->fetchColumn();
             $stats['completed_orders'] = (int)$pdo->query("SELECT COUNT(*) FROM orders WHERE status = 'completed'")->fetchColumn();
             $stats['total_revenue'] = (float)$pdo->query("SELECT COALESCE(SUM(amount), 0) FROM payments WHERE status = 'succeeded'")->fetchColumn();
         }
@@ -673,7 +908,7 @@ try {
         jsonResponse(['users' => $users]);
     }
 
-    if ($path === '/admin/orders' && $method === 'GET') {
+    if (($path === '/admin/orders' || $path === '/orders/all') && $method === 'GET') {
         $authUser = getAuthenticatedUser($pdo);
         if (!$authUser || $authUser['role'] !== 'admin') {
             jsonResponse(['error' => 'Доступ разрешен только администраторам'], 403);
@@ -683,21 +918,7 @@ try {
         if ($pdo) {
             $rows = $pdo->query("SELECT o.*, u.login as user_login, u.email as user_email FROM orders o LEFT JOIN users u ON o.client_id = u.id ORDER BY o.id DESC LIMIT 200")->fetchAll();
             foreach ($rows as $r) {
-                $orders[] = [
-                    'id' => (string)$r['id'],
-                    'order_number' => 'ORD-' . str_pad($r['id'], 5, '0', STR_PAD_LEFT),
-                    'client_id' => 'usr-' . ($r['client_id'] ?? 1),
-                    'user_login' => $r['user_login'] ?? 'Клиент',
-                    'user_email' => $r['user_email'] ?? '',
-                    'subject' => $r['subject'] ?? 'Учебный проект',
-                    'work_type' => $r['work_type'] ?? 'Чертеж',
-                    'description' => $r['description'] ?? '',
-                    'deadline' => $r['deadline'] ?? '',
-                    'contact' => $r['contact'] ?? '',
-                    'price' => (float)($r['price'] ?? 0),
-                    'status' => $r['status'] ?? 'pending',
-                    'created_at' => $r['created_at'] ?? date('c')
-                ];
+                $orders[] = formatOrderRecord($r, $pdo);
             }
         }
 

@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Order, OrderStatus } from '../types';
 import { User as UserIcon, Mail, Shield, Calendar, Edit3, PlusCircle, CheckCircle2, Clock, XCircle, AlertCircle, FileText, Download, LogOut, Settings, Ban, Send, MessageSquare, ArrowLeft } from 'lucide-react';
+import { apiFetch } from '../utils/api';
 
 export const ProfilePage: React.FC = () => {
   const { user, tokens, logout, updateProfile } = useAuth();
@@ -46,7 +47,7 @@ export const ProfilePage: React.FC = () => {
     if (!tokens?.access_token) return;
     setLoadingOrders(true);
     try {
-      const resp = await fetch('/api/orders', {
+      const resp = await apiFetch('/api/orders', {
         headers: { Authorization: `Bearer ${tokens.access_token}` }
       });
       if (resp.ok) {

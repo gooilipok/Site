@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, AuthTokens, UserRole } from '../types';
+import { apiFetch } from '../utils/api';
 
 interface AuthContextType {
   user: User | null;
@@ -43,7 +44,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const initAuth = async () => {
       if (tokens?.access_token) {
         try {
-          const resp = await fetch('/api/auth/me', {
+          const resp = await apiFetch('/api/auth/me', {
             headers: { Authorization: `Bearer ${tokens.access_token}` }
           });
           if (resp.ok) {
@@ -73,7 +74,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (identifier: string, pass: string) => {
     try {
-      const resp = await fetch('/api/auth/login', {
+      const resp = await apiFetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ login_identifier: identifier, password: pass })
@@ -100,7 +101,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     consent_accepted: boolean;
   }) => {
     try {
-      const resp = await fetch('/api/auth/register', {
+      const resp = await apiFetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -119,7 +120,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const verifyEmailCode = async (email: string, code: string) => {
     try {
-      const resp = await fetch('/api/auth/verify-code', {
+      const resp = await apiFetch('/api/auth/verify-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, code })
@@ -141,7 +142,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!tokens?.access_token) return { success: false, error: 'Не авторизован' };
 
     try {
-      const resp = await fetch('/api/profile', {
+      const resp = await apiFetch('/api/profile', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

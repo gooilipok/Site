@@ -3,6 +3,7 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { FileUp, Send, CheckCircle2, AlertCircle, ArrowLeft, Paperclip, X, Clock, BookOpen, MessageSquare, Info, ShieldCheck } from 'lucide-react';
 import { OrderFile } from '../types';
+import { apiFetch } from '../utils/api';
 
 export const CreateOrderPage: React.FC = () => {
   const navigate = useNavigate();
@@ -138,7 +139,7 @@ export const CreateOrderPage: React.FC = () => {
         headers['Authorization'] = `Bearer ${tokens.access_token}`;
       }
 
-      const resp = await fetch('/api/orders', {
+      const resp = await apiFetch('/api/orders', {
         method: 'POST',
         headers,
         body: JSON.stringify(payload)

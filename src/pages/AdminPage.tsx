@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { User, Order, OrderStatus, AdminStats } from '../types';
 import { Shield, Users, ShoppingBag, Search, Filter, Trash2, Edit2, CheckCircle, RefreshCw, Send, AlertTriangle, Cpu, Mail, Lock, Ban, UserCheck, DollarSign, X, Check, XCircle, RotateCcw, Archive } from 'lucide-react';
+import { apiFetch } from '../utils/api';
 
 export const AdminPage: React.FC = () => {
   const { user, tokens, isAuthenticated } = useAuth();
@@ -38,7 +39,7 @@ export const AdminPage: React.FC = () => {
     setLoading(true);
     try {
       // Fetch Stats
-      const statsResp = await fetch('/api/admin/stats', {
+      const statsResp = await apiFetch('/api/admin/stats', {
         headers: { Authorization: `Bearer ${tokens.access_token}` }
       });
       if (statsResp.ok) {
@@ -47,7 +48,7 @@ export const AdminPage: React.FC = () => {
       }
 
       // Fetch Users
-      const usersResp = await fetch('/api/admin/users', {
+      const usersResp = await apiFetch('/api/admin/users', {
         headers: { Authorization: `Bearer ${tokens.access_token}` }
       });
       if (usersResp.ok) {
@@ -56,7 +57,7 @@ export const AdminPage: React.FC = () => {
       }
 
       // Fetch Orders
-      const ordersResp = await fetch('/api/orders', {
+      const ordersResp = await apiFetch('/api/orders', {
         headers: { Authorization: `Bearer ${tokens.access_token}` }
       });
       if (ordersResp.ok) {
@@ -73,7 +74,7 @@ export const AdminPage: React.FC = () => {
 
   const handleUpdateOrderStatus = async (orderId: string, newStatus: OrderStatus) => {
     try {
-      const resp = await fetch(`/api/orders/${orderId}/status`, {
+      const resp = await apiFetch(`/api/orders/${orderId}/status`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -100,7 +101,7 @@ export const AdminPage: React.FC = () => {
     if (!confirm(`Вы действительно хотите ${actionText} пользователя ${username}?`)) return;
 
     try {
-      const resp = await fetch(`/api/admin/users/${userId}/status`, {
+      const resp = await apiFetch(`/api/admin/users/${userId}/status`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -133,7 +134,7 @@ export const AdminPage: React.FC = () => {
 
   const handleSavePrices = async (orderId: string) => {
     try {
-      const resp = await fetch(`/api/orders/${orderId}/prices`, {
+      const resp = await apiFetch(`/api/orders/${orderId}/prices`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -160,7 +161,7 @@ export const AdminPage: React.FC = () => {
 
   const handleUpdateUserRole = async (userId: string, newRole: 'customer' | 'admin') => {
     try {
-      const resp = await fetch(`/api/admin/users/${userId}/role`, {
+      const resp = await apiFetch(`/api/admin/users/${userId}/role`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -185,7 +186,7 @@ export const AdminPage: React.FC = () => {
     if (!confirm(`Удалить пользователя ${username}?`)) return;
 
     try {
-      const resp = await fetch(`/api/admin/users/${userId}`, {
+      const resp = await apiFetch(`/api/admin/users/${userId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${tokens?.access_token}` }
       });

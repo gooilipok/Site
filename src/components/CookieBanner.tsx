@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Cookie, Settings, Check, X, Shield } from 'lucide-react';
 import { CookiePreferences } from '../types';
+import { apiFetch } from '../utils/api';
 
 const COOKIE_PREFS_KEY = 'bausquad_cookie_consent_prefs';
 
@@ -32,7 +33,7 @@ export const CookieBanner: React.FC = () => {
     localStorage.setItem(COOKIE_PREFS_KEY, JSON.stringify(prefs));
 
     // Post to API asynchronously
-    fetch('/api/cookies', {
+    apiFetch('/api/cookies', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ preferences: prefs })

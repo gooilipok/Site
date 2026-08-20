@@ -7,20 +7,20 @@
     RewriteEngine On
     RewriteBase /
 
-    # 1. Prevent infinite internal redirect loops on rewritten targets
-    RewriteRule ^api\.php$ - [L]
-    RewriteRule ^index\.html$ - [L]
-
-    # 2. Pass through real physical files and directories directly
+    # 1. Direct pass-through for existing real files and directories
     RewriteCond %{REQUEST_FILENAME} -f [OR]
     RewriteCond %{REQUEST_FILENAME} -d
     RewriteRule ^ - [L]
 
-    # 3. Route all /api and /api/* requests directly to api.php
-    RewriteRule ^api(/.*)?$ api.php [QSA,L]
+    # 2. Prevent infinite internal loops
+    RewriteRule ^api\.php$ - [L]
+    RewriteRule ^index\.html$ - [L]
 
-    # 4. Fallback all remaining frontend URL routes to index.html (React Router)
-    RewriteRule ^ index.html [QSA,L]
+    # 3. Route all /api and /api/* requests to /api.php with query string
+    RewriteRule ^api/?(.*)$ /api.php?path=$1 [QSA,L]
+
+    # 4. Fallback all remaining frontend routes to /index.html (React Router)
+    RewriteRule ^ /index.html [L]
 </IfModule>
 
 # Fallback error documents

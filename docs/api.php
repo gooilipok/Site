@@ -342,7 +342,7 @@ try {
 
     // Login
     if (($path === '/auth/login' || $path === '/login') && $method === 'POST') {
-        $identifier = trim($input['identifier'] ?? ($input['email'] ?? ($input['login'] ?? '')));
+        $identifier = trim($input['identifier'] ?? ($input['login_identifier'] ?? ($input['email'] ?? ($input['login'] ?? ''))));
         $password = (string)($input['password'] ?? '');
 
         if (empty($identifier) || empty($password)) {

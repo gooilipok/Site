@@ -158,9 +158,13 @@ function jsonResponse($data, int $statusCode = 200) {
 
 function getJsonInput(): array {
     $input = file_get_contents('php://input');
-    if (empty($input)) return [];
-    $data = json_decode($input, true);
-    return is_array($data) ? $data : [];
+    if (!empty($input)) {
+        $data = json_decode($input, true);
+        if (is_array($data)) {
+            return !empty($_POST) ? array_merge($_POST, $data) : $data;
+        }
+    }
+    return !empty($_POST) ? $_POST : [];
 }
 
 // Shutdown handler

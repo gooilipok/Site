@@ -1,47 +1,35 @@
 # ====================================================================
-# BauSquad — Master Apache Server Configuration (.htaccess)
-# Single Root Architecture (Direct routing to api.php & React SPA)
+# BauSquad — Apache Web Server Configuration (.htaccess)
+# Single Root Architecture (api.php + React SPA)
 # ====================================================================
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
     RewriteBase /
 
-    # 1. PRIORITY #1: Route all /api, /api/, and /api/* requests directly to api.php
-    # This MUST execute before -f / -d checks so that existing folders named "api" don't interfere
-    RewriteRule ^api$ api.php [QSA,L]
-    RewriteRule ^api/(.*)$ api.php [QSA,L]
-    RewriteRule ^api\.php(/.*)?$ api.php [QSA,L]
+    # 1. Prevent infinite internal redirect loops on rewritten targets
+    RewriteRule ^api\.php$ - [L]
+    RewriteRule ^index\.html$ - [L]
 
-    # 2. PRIORITY #2: Direct pass-through for existing physical files (diag.php, test.php, assets, etc.)
+    # 2. Pass through real physical files and directories directly
     RewriteCond %{REQUEST_FILENAME} -f [OR]
     RewriteCond %{REQUEST_FILENAME} -d
     RewriteRule ^ - [L]
 
-    # 3. PRIORITY #3: Fallback all frontend routes to index.html for React Router SPA
+    # 3. Route all /api and /api/* requests directly to api.php
+    RewriteRule ^api(/.*)?$ api.php [QSA,L]
+
+    # 4. Fallback all remaining frontend URL routes to index.html (React Router)
     RewriteRule ^ index.html [QSA,L]
 </IfModule>
 
-# Fallback 404 handler for SPA routing
+# Fallback error documents
 ErrorDocument 404 /index.html
 
-# Enable GZIP compression
-<IfModule mod_deflate.c>
-    AddOutputFilterByType DEFLATE text/plain
-    AddOutputFilterByType DEFLATE text/html
-    AddOutputFilterByType DEFLATE text/xml
-    AddOutputFilterByType DEFLATE text/css
-    AddOutputFilterByType DEFLATE application/xml
-    AddOutputFilterByType DEFLATE application/xhtml+xml
-    AddOutputFilterByType DEFLATE application/rss+xml
-    AddOutputFilterByType DEFLATE application/javascript
-    AddOutputFilterByType DEFLATE application/x-javascript
-    AddOutputFilterByType DEFLATE application/json
-</IfModule>
-
-# Set proper MIME types
+# MIME Types
 <IfModule mod_mime.c>
     AddType application/javascript .js
     AddType text/css .css
     AddType image/svg+xml .svg
+    AddType application/json .json
 </IfModule>

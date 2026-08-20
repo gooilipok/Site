@@ -83,7 +83,7 @@ try {
     // ==========================================\
     // 1. HEALTH & DIAGNOSTICS
     // ==========================================\
-    if ($path === '/health' || $path === '/ping' || $path === '/diag' || $path === '/diag.php' || $path === '/diagnostics' || $path === '') {
+    if ($path === '/health' || $path === '/ping' || $path === '/diag' || $path === '/diag.php' || $path === '/diagnostics' || $path === '/' || $path === '') {
         global $loadedEnvFile, $lastDbConnectionError;
         
         $dbStatus = ($pdo !== null);

@@ -1,22 +1,24 @@
 # ====================================================================
 # BauSquad — Master Apache Server Configuration (.htaccess)
-# Supports React Router SPA HTML5 History mode and PHP REST API Router
-# Compatible with nic.ru / RU-CENTER shared hosting & VPS
+# Single Root Architecture (Direct routing to api.php & React SPA)
 # ====================================================================
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
     RewriteBase /
 
-    # 1. Allow existing physical files and directories to pass through directly
+    # 1. PRIORITY #1: Route all /api, /api/, and /api/* requests directly to api.php
+    # This MUST execute before -f / -d checks so that existing folders named "api" don't interfere
+    RewriteRule ^api$ api.php [QSA,L]
+    RewriteRule ^api/(.*)$ api.php [QSA,L]
+    RewriteRule ^api\.php(/.*)?$ api.php [QSA,L]
+
+    # 2. PRIORITY #2: Direct pass-through for existing physical files (diag.php, test.php, assets, etc.)
     RewriteCond %{REQUEST_FILENAME} -f [OR]
     RewriteCond %{REQUEST_FILENAME} -d
     RewriteRule ^ - [L]
 
-    # 2. Route all /api/* requests directly to root-level api.php
-    RewriteRule ^api(/.*)?$ api.php [QSA,L]
-
-    # 3. Fallback all frontend routes to index.html for React Router
+    # 3. PRIORITY #3: Fallback all frontend routes to index.html for React Router SPA
     RewriteRule ^ index.html [QSA,L]
 </IfModule>
 

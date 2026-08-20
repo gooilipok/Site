@@ -1,6 +1,7 @@
 <?php
 /**
  * BauSquad — Email Sender via Direct Socket SMTP & Native mail() fallback
+ * Полная защита от зависаний сокетов и 502 Bad Gateway таймаутов
  * Не требует composer/внешних пакетов, работает на любом PHP 7.4+ хостинге
  */
 require_once __DIR__ . '/config.php';
@@ -23,10 +24,14 @@ function sendEmail($to, $subject, $htmlContent, $textContent = ''): array {
 
     try {
         $scheme = ($port === 465) ? 'ssl://' : '';
-        $socket = @fsockopen($scheme . $host, $port, $errno, $errstr, 15);
+        // 3 seconds timeout to guarantee no 502 gateway timeouts
+        $socket = @fsockopen($scheme . $host, $port, $errno, $errstr, 3);
         if (!$socket) {
-            throw new Exception("Не удалось подключиться к SMTP {$host}:{$port} ({$errstr})");
+            error_log("[SMTP Socket Error]: {$host}:{$port} - {$errstr} ({$errno})");
+            return ['success' => false, 'error' => "SMTP connect timeout: {$errstr}"];
         }
+
+        @stream_set_timeout($socket, 3);
 
         $getResponse = function($sock) {
             $data = '';
@@ -50,7 +55,8 @@ function sendEmail($to, $subject, $htmlContent, $textContent = ''): array {
         $sendCommand($socket, base64_encode($user));
         $res = $sendCommand($socket, base64_encode($pass));
         if (strpos($res, '235') === false) {
-            throw new Exception("SMTP аутентификация отклонена: {$res}");
+            @fclose($socket);
+            return ['success' => false, 'error' => "SMTP auth rejected: {$res}"];
         }
 
         // Envelope

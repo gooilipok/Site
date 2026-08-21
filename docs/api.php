@@ -442,31 +442,6 @@ try {
             'debug_code' => (APP_ENV !== 'production') ? $code : null
         ], 201);
     }
-            'telegram_handle' => '',
-            'tg_id' => '',
-            'agreements' => [
-                'terms_accepted' => true,
-                'terms_accepted_at' => date('c'),
-                'privacy_accepted' => true,
-                'privacy_accepted_at' => date('c'),
-                'consent_accepted' => true,
-                'consent_accepted_at' => date('c')
-            ],
-            'order_count' => 0
-        ];
-
-        jsonResponse([
-            'message' => 'Регистрация успешно завершена',
-            'user' => $userObj,
-            'tokens' => [
-                'access_token' => $accessToken,
-                'refresh_token' => $refreshToken,
-                'token_type' => 'Bearer',
-                'expires_in' => JWT_ACCESS_EXPIRY
-            ],
-            'debug_code' => (APP_ENV !== 'production') ? $code : null
-        ], 201);
-    }
 
     // Register Step 2: Verify code and create user
     if (($path === '/auth/verify' || $path === '/auth/verify-code' || $path === '/verify' || $path === '/verify-code') && $method === 'POST') {

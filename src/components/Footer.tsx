@@ -39,7 +39,13 @@ export const Footer: React.FC = () => {
             <li>
               <Link to="/consent" className="hover:text-[#c5a059] transition-colors flex items-center gap-1.5">
                 <ShieldCheck className="w-3.5 h-3.5 text-[#c5a059]" />
-                Согласие на обработку персональных данных
+                Согласие на обработку данных
+              </Link>
+            </li>
+            <li>
+              <Link to="/diagnostics" className="hover:text-[#c5a059] transition-colors flex items-center gap-1.5 text-[#c5a059]/80 font-mono">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                Диагностика системы
               </Link>
             </li>
           </ul>

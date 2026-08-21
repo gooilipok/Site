@@ -98,25 +98,24 @@ function formatOrderRecord(array $r, ?PDO $pdo = null): array {
 
     $rawPrice = $r['client_price'] ?? ($r['price'] ?? 'На обсуждении');
     $numericPrice = is_numeric($rawPrice) ? (float)$rawPrice : 0;
-    
+
     return [
         'id' => (string)$id,
         'order_id' => $id,
         'order_number' => 'ORD-' . str_pad((string)$id, 5, '0', STR_PAD_LEFT),
-        'client_id' => 'usr-' . ($r['client_id'] ?? 1),
-        'user_id' => (string)($r['client_id'] ?? 1),
-        'user_login' => $r['user_login'] ?? ($r['client_name'] ?? 'Клиент'),
-        'user_email' => $r['user_email'] ?? '',
-        'title' => $subject,
         'subject' => $subject,
+        'title' => $subject,
         'work_type' => $workType,
         'description' => $rawDesc,
         'deadline' => $deadline ?: 'Не указан',
-        'contact' => $contact ?: 'Не указан',
-        'price' => $numericPrice > 0 ? (string)$numericPrice . ' ₽' : ($priceStr ?: 'На обсуждении'),
-        'client_price' => $priceStr ?: 'На обсуждении',
-        'executer_price' => $r['executer_price'] ?? '',
+        'contact' => $contact ?: '',
+        'price' => $numericPrice,
+        'client_price' => $rawPrice,
+        'prepayment' => (float)($r['prepayment'] ?? 0),
         'status' => $r['status'] ?? 'new',
+        'client_id' => (int)($r['client_id'] ?? 1),
+        'user_login' => $r['user_login'] ?? '',
+        'user_email' => $r['user_email'] ?? '',
         'files' => $files,
         'files_count' => count($files),
         'created_at' => $r['created_at'] ?? date('c'),
@@ -141,6 +140,10 @@ try {
     if ($path === '/' && !empty($_GET['route'])) {
         $path = '/' . trim($_GET['route'], '/');
     }
+
+    // Strip any accidental query string in path
+    $path = parse_url($path, PHP_URL_PATH) ?? $path;
+    $path = '/' . trim($path, '/');
 
     $input = getJsonInput();
 
@@ -417,31 +420,6 @@ try {
             'account_status' => 'active',
             'is_verified' => true,
             'created_at' => date('c'),
-            'telegram_handle' => '',
-            'tg_id' => '',
-            'agreements' => [
-                'terms_accepted' => true,
-                'terms_accepted_at' => date('c'),
-                'privacy_accepted' => true,
-                'privacy_accepted_at' => date('c'),
-                'consent_accepted' => true,
-                'consent_accepted_at' => date('c')
-            ],
-            'order_count' => 0
-        ];
-
-        jsonResponse([
-            'message' => 'Регистрация успешно завершена',
-            'user' => $userObj,
-            'tokens' => [
-                'access_token' => $accessToken,
-                'refresh_token' => $refreshToken,
-                'token_type' => 'Bearer',
-                'expires_in' => JWT_ACCESS_EXPIRY
-            ],
-            'debug_code' => (APP_ENV !== 'production') ? $code : null
-        ], 201);
-    }
             'telegram_handle' => '',
             'tg_id' => '',
             'agreements' => [

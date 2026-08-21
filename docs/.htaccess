@@ -1,35 +1,46 @@
 # ====================================================================
 # BauSquad — Apache Web Server Configuration (.htaccess)
-# Single Root Architecture (api.php + React SPA)
+# Single Root Architecture (api.php + React SPA + Diagnostics)
 # ====================================================================
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
     RewriteBase /
 
-    # 1. Direct pass-through for existing real files and directories
+    # 1. Forward Authorization header to PHP under Apache / FastCGI
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # 2. Allow direct access to real files and directories (scripts, assets, images, uploads)
     RewriteCond %{REQUEST_FILENAME} -f [OR]
     RewriteCond %{REQUEST_FILENAME} -d
     RewriteRule ^ - [L]
 
-    # 2. Prevent infinite internal loops
-    RewriteRule ^api\.php$ - [L]
+    # 3. Direct access to essential diagnostic and test scripts
+    RewriteRule ^(api\.php|diag\.php|test\.php|db\.php|jwt\.php|telegram\.php|mail\.php|config\.php)$ - [L]
+    RewriteRule ^diag/?$ diag.php [QSA,L]
+    RewriteRule ^test/?$ test.php [QSA,L]
+    RewriteRule ^diagnostics/?$ diag.php [QSA,L]
+
+    # 4. Route /api and /api/* to api.php with query string path parameter
+    RewriteRule ^api/?$ api.php?path= [QSA,L]
+    RewriteRule ^api/(.*)$ api.php?path=$1 [QSA,L]
+
+    # 5. Prevent infinite loop for index.html
     RewriteRule ^index\.html$ - [L]
 
-    # 3. Route all /api and /api/* requests to /api.php with query string
-    RewriteRule ^api/?(.*)$ /api.php?path=$1 [QSA,L]
-
-    # 4. Fallback all remaining frontend routes to /index.html (React Router)
-    RewriteRule ^ /index.html [L]
+    # 6. Fallback all remaining frontend routes to /index.html (React Router)
+    RewriteRule ^ index.html [L]
 </IfModule>
 
-# Fallback error documents
+# Fallback error document for missing files
 ErrorDocument 404 /index.html
 
-# MIME Types
+# MIME Types for modern JS bundles and web fonts
 <IfModule mod_mime.c>
-    AddType application/javascript .js
+    AddType application/javascript .js .mjs
     AddType text/css .css
     AddType image/svg+xml .svg
     AddType application/json .json
+    AddType font/woff2 .woff2
 </IfModule>

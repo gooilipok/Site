@@ -15,6 +15,7 @@ import { TermsPage } from './pages/TermsPage';
 import { PrivacyPage } from './pages/PrivacyPage';
 import { ConsentPage } from './pages/ConsentPage';
 import { AdminPage } from './pages/AdminPage';
+import { DiagnosticsPage } from './pages/DiagnosticsPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { UnauthorizedPage, ForbiddenPage, ServerErrorPage } from './pages/ErrorPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -52,6 +53,10 @@ export default function App() {
 
                 {/* Admin Panel */}
                 <Route path="/admin" element={<AdminPage />} />
+
+                {/* System Diagnostics */}
+                <Route path="/diagnostics" element={<DiagnosticsPage />} />
+                <Route path="/diag" element={<DiagnosticsPage />} />
 
                 {/* Error Pages */}
                 <Route path="/401" element={<UnauthorizedPage />} />

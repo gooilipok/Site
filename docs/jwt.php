@@ -46,18 +46,45 @@ function verifyJWT($token) {
 
 function getBearerToken(): ?string {
     $headers = null;
-    if (isset($_SERVER['Authorization'])) {
-        $headers = trim($_SERVER["Authorization"]);
-    } elseif (isset($_SERVER['HTTP_AUTHORIZATION'])) {
+    if (isset($_SERVER['HTTP_AUTHORIZATION'])) {
         $headers = trim($_SERVER["HTTP_AUTHORIZATION"]);
+    } elseif (isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
+        $headers = trim($_SERVER["REDIRECT_HTTP_AUTHORIZATION"]);
+    } elseif (isset($_SERVER['REDIRECT_REDIRECT_HTTP_AUTHORIZATION'])) {
+        $headers = trim($_SERVER["REDIRECT_REDIRECT_HTTP_AUTHORIZATION"]);
+    } elseif (isset($_SERVER['Authorization'])) {
+        $headers = trim($_SERVER["Authorization"]);
     } elseif (function_exists('apache_request_headers')) {
         $requestHeaders = apache_request_headers();
-        $headers = $requestHeaders['Authorization'] ?? ($requestHeaders['authorization'] ?? null);
+        foreach ($requestHeaders as $key => $val) {
+            if (strcasecmp($key, 'Authorization') === 0 || strcasecmp($key, 'X-Auth-Token') === 0) {
+                $headers = trim($val);
+                break;
+            }
+        }
     }
 
-    if (!empty($headers) && preg_match('/Bearer\s(\S+)/i', $headers, $matches)) {
-        return $matches[1];
+    if (!empty($headers)) {
+        if (preg_match('/Bearer\s+(\S+)/i', $headers, $matches)) {
+            return $matches[1];
+        }
+        // Direct raw token in Authorization header
+        if (strlen($headers) > 20 && strpos($headers, ' ') === false) {
+            return $headers;
+        }
     }
+
+    // Query string fallback (?token=... or ?access_token=...)
+    if (!empty($_GET['token'])) return trim($_GET['token']);
+    if (!empty($_GET['access_token'])) return trim($_GET['access_token']);
+    if (!empty($_POST['token'])) return trim($_POST['token']);
+    if (!empty($_POST['access_token'])) return trim($_POST['access_token']);
+
+    // Cookie fallback
+    if (!empty($_COOKIE['token'])) return trim($_COOKIE['token']);
+    if (!empty($_COOKIE['access_token'])) return trim($_COOKIE['access_token']);
+    if (!empty($_COOKIE['bau_token'])) return trim($_COOKIE['bau_token']);
+
     return null;
 }
 
@@ -71,6 +98,7 @@ function getAuthenticatedUser($pdo): ?array {
     }
 
     $rawId = $payload['userId'];
+    $role = ($payload['role'] ?? '') === 'admin' ? 'admin' : 'customer';
     $numericId = (int)preg_replace('/\D/', '', (string)$rawId);
     if ($numericId <= 0) $numericId = 1;
 
@@ -87,31 +115,27 @@ function getAuthenticatedUser($pdo): ?array {
         }
     }
 
-    // Default admin in-memory fallback
-    if ($payload['userId'] === 'usr-admin-01' || ($payload['role'] ?? '') === 'admin') {
-        return [
-            'id' => 'usr-admin-01',
-            'email' => 'admin@bausquad.ru',
-            'username' => 'BauAdmin',
-            'role' => 'admin',
-            'account_status' => 'active',
-            'is_verified' => true,
-            'created_at' => date('c'),
-            'telegram_handle' => '',
-            'tg_id' => '',
-            'agreements' => [
-                'terms_accepted' => true,
-                'terms_accepted_at' => date('c'),
-                'privacy_accepted' => true,
-                'privacy_accepted_at' => date('c'),
-                'consent_accepted' => true,
-                'consent_accepted_at' => date('c')
-            ],
-            'order_count' => 0
-        ];
-    }
-
-    return null;
+    // Graceful in-memory fallback using validated JWT payload (for demo or temporary offline DB)
+    return [
+        'id' => 'usr-' . $numericId,
+        'email' => ($role === 'admin') ? 'admin@bausquad.ru' : ($rawId . '@bausquad.ru'),
+        'username' => ($role === 'admin') ? 'BauAdmin' : ($rawId ?: 'Пользователь'),
+        'role' => $role,
+        'account_status' => 'active',
+        'is_verified' => true,
+        'created_at' => date('c'),
+        'telegram_handle' => '',
+        'tg_id' => '',
+        'agreements' => [
+            'terms_accepted' => true,
+            'terms_accepted_at' => date('c'),
+            'privacy_accepted' => true,
+            'privacy_accepted_at' => date('c'),
+            'consent_accepted' => true,
+            'consent_accepted_at' => date('c')
+        ],
+        'order_count' => 0
+    ];
 }
 
 function formatUser($row, $pdo = null): array {

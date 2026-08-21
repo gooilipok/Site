@@ -73,22 +73,17 @@ function formatOrderRecord(array $r, ?PDO $pdo = null): array {
     $rawDesc = (string)($r['description'] ?? '');
     
     $subject = trim($r['subject'] ?? ($r['title'] ?? ''));
-    $workType = trim($r['work_type'] ?? '');
     $deadline = trim($r['deadline'] ?? '');
     $contact = trim($r['contact'] ?? '');
-    $priceStr = trim((string)($r['price'] ?? ($r['client_price'] ?? '')));
     
     // If columns were packed into composite description
     if (empty($subject) && strpos($rawDesc, "Предмет:") !== false) {
         if (preg_match('#Предмет:\s*([^\n]+)#u', $rawDesc, $m)) $subject = trim($m[1]);
-        if (empty($workType) && preg_match('#Тип:\s*([^\n]+)#u', $rawDesc, $m)) $workType = trim($m[1]);
         if (empty($deadline) && preg_match('#Дедлайн:\s*([^\n]+)#u', $rawDesc, $m)) $deadline = trim($m[1]);
         if (empty($contact) && preg_match('#Контакты:\s*([^\n]+)#u', $rawDesc, $m)) $contact = trim($m[1]);
-        if (empty($priceStr) && preg_match('#Бюджет:\s*([^\n]+)#u', $rawDesc, $m)) $priceStr = trim($m[1]);
     }
     
     if (empty($subject)) $subject = 'Учебный проект';
-    if (empty($workType)) $workType = 'Чертеж / Проект';
     
     $files = [];
     if (!empty($r['files'])) {
@@ -96,31 +91,32 @@ function formatOrderRecord(array $r, ?PDO $pdo = null): array {
         if (is_array($decoded)) $files = $decoded;
     }
 
-    $rawPrice = $r['client_price'] ?? ($r['price'] ?? 'На обсуждении');
-    $numericPrice = is_numeric($rawPrice) ? (float)$rawPrice : 0;
-    
+    $rawClientPrice = $r['client_price'] ?? ($r['price'] ?? '0.00');
+    $numericPrice = is_numeric($rawClientPrice) ? (float)$rawClientPrice : 0;
+    $executerPrice = isset($r['executer_price']) && is_numeric($r['executer_price']) ? (float)$r['executer_price'] : 0;
+
     return [
         'id' => (string)$id,
         'order_id' => $id,
         'order_number' => 'ORD-' . str_pad((string)$id, 5, '0', STR_PAD_LEFT),
-        'client_id' => 'usr-' . ($r['client_id'] ?? 1),
-        'user_id' => (string)($r['client_id'] ?? 1),
-        'user_login' => $r['user_login'] ?? ($r['client_name'] ?? 'Клиент'),
-        'user_email' => $r['user_email'] ?? '',
-        'title' => $subject,
         'subject' => $subject,
-        'work_type' => $workType,
+        'title' => $subject,
         'description' => $rawDesc,
         'deadline' => $deadline ?: 'Не указан',
-        'contact' => $contact ?: 'Не указан',
-        'price' => $numericPrice > 0 ? (string)$numericPrice . ' ₽' : ($priceStr ?: 'На обсуждении'),
-        'client_price' => $priceStr ?: 'На обсуждении',
-        'executer_price' => $r['executer_price'] ?? '',
+        'contact' => $contact ?: '',
+        'price' => $numericPrice,
+        'client_price' => $numericPrice > 0 ? (string)$numericPrice : 'На обсуждении',
+        'executer_price' => $executerPrice > 0 ? (string)$executerPrice : '',
         'status' => $r['status'] ?? 'new',
+        'source' => $r['source'] ?? 'website',
+        'client_id' => (int)($r['client_id'] ?? 1),
+        'user_login' => $r['user_login'] ?? '',
+        'user_email' => $r['user_email'] ?? '',
         'files' => $files,
         'files_count' => count($files),
         'created_at' => $r['created_at'] ?? date('c'),
-        'updated_at' => $r['updated_at'] ?? ($r['created_at'] ?? date('c'))
+        'completed_at' => $r['completed_at'] ?? null,
+        'rework_count' => (int)($r['rework_count'] ?? 0)
     ];
 }
 
@@ -141,6 +137,10 @@ try {
     if ($path === '/' && !empty($_GET['route'])) {
         $path = '/' . trim($_GET['route'], '/');
     }
+
+    // Strip any accidental query string in path
+    $path = parse_url($path, PHP_URL_PATH) ?? $path;
+    $path = '/' . trim($path, '/');
 
     $input = getJsonInput();
 
@@ -729,70 +729,47 @@ try {
 
         $subject = trim($input['subject'] ?? ($input['title'] ?? 'Без темы'));
         $title = $subject;
-        $workType = trim($input['work_type'] ?? 'Чертеж / Проект');
         $description = trim($input['description'] ?? '');
         $deadline = trim($input['deadline'] ?? 'Не указан');
         $contact = trim($input['contact'] ?? '');
-        $price = trim((string)($input['price'] ?? ($input['client_price'] ?? 'На обсуждении')));
+        $price = trim((string)($input['price'] ?? ($input['client_price'] ?? '0')));
         $rawFiles = is_array($input['files'] ?? null) ? $input['files'] : [];
 
         $orderId = null;
         $now = date('Y-m-d H:i:s');
 
         if ($pdo) {
-            $cols = getTableColumns($pdo, 'orders');
+            // Anti-duplicate protection: Check if same user submitted identical order in last 15 seconds
+            try {
+                $checkStmt = $pdo->prepare("SELECT order_id FROM orders WHERE client_id = ? AND subject = ? AND description = ? AND contact = ? AND created_at >= DATE_SUB(NOW(), INTERVAL 15 SECOND) ORDER BY order_id DESC LIMIT 1");
+                $checkStmt->execute([$clientId, $subject, $description, $contact]);
+                $existingId = $checkStmt->fetchColumn();
+                if ($existingId) {
+                    jsonResponse([
+                        'message' => 'Заказ уже принят в обработку',
+                        'order_id' => (string)$existingId,
+                        'order_number' => 'ORD-' . str_pad((string)$existingId, 5, '0', STR_PAD_LEFT),
+                        'status' => 'new',
+                        'duplicate' => true
+                    ], 200);
+                }
+            } catch (\Throwable $e) {}
 
-            // Build dynamic fields matching actual table schema
-            $fields = ['client_id', 'description', 'status', 'created_at', 'updated_at'];
-            $placeholders = ['?', '?', "'new'", '?', '?'];
-            $params = [$clientId, $description, $now, $now];
-
-            if (in_array('subject', $cols, true)) {
-                $fields[] = 'subject';
-                $placeholders[] = '?';
-                $params[] = $subject;
-            }
-            if (in_array('title', $cols, true)) {
-                $fields[] = 'title';
-                $placeholders[] = '?';
-                $params[] = $title;
-            }
-            if (in_array('work_type', $cols, true)) {
-                $fields[] = 'work_type';
-                $placeholders[] = '?';
-                $params[] = $workType;
-            }
-            if (in_array('deadline', $cols, true)) {
-                $fields[] = 'deadline';
-                $placeholders[] = '?';
-                $params[] = $deadline;
-            }
-            if (in_array('contact', $cols, true)) {
-                $fields[] = 'contact';
-                $placeholders[] = '?';
-                $params[] = $contact;
-            }
-            if (in_array('price', $cols, true)) {
-                $fields[] = 'price';
-                $placeholders[] = '?';
-                $params[] = $price;
-            }
-            if (in_array('client_price', $cols, true)) {
-                $fields[] = 'client_price';
-                $placeholders[] = '?';
-                $params[] = $price;
-            }
-
-            // Fallback composite description if dedicated columns don't exist
-            if (!in_array('subject', $cols, true) || !in_array('deadline', $cols, true)) {
-                $composite = "Предмет: {$subject}\nТип: {$workType}\nОписание: {$description}\nДедлайн: {$deadline}\nКонтакты: {$contact}\nБюджет: {$price}";
-                $params[1] = $composite; // update description param
-            }
-
-            $sql = "INSERT INTO orders (" . implode(', ', $fields) . ") VALUES (" . implode(', ', $placeholders) . ")";
-            $stmt = $pdo->prepare($sql);
-            $stmt->execute($params);
+            $stmt = $pdo->prepare("INSERT INTO orders (
+                client_id, subject, description, deadline, contact, source, status,
+                terms_accepted, privacy_accepted, consent_accepted, agreements_accepted_at, created_at
+            ) VALUES (?, ?, ?, ?, ?, 'website', 'new', 1, 1, 1, NOW(), NOW())");
+            $stmt->execute([$clientId, $subject, $description, $deadline, $contact]);
             $orderId = (int)$pdo->lastInsertId();
+
+            // Insert into payments table
+            try {
+                $numPrice = is_numeric($price) ? (float)$price : 0.00;
+                $payStmt = $pdo->prepare("INSERT INTO payments (order_id, client_price, executer_price) VALUES (?, ?, 0.00) ON DUPLICATE KEY UPDATE client_price = VALUES(client_price)");
+                $payStmt->execute([$orderId, $numPrice]);
+            } catch (\Throwable $e) {
+                error_log("[Payments Insert Notice]: " . $e->getMessage());
+            }
         } else {
             $orderId = time();
         }
@@ -800,31 +777,18 @@ try {
         // Process and save uploaded files
         $savedFiles = saveOrderUploads($rawFiles, $orderId);
 
-        // Update files JSON in orders table if column exists
-        if ($pdo && !empty($savedFiles)) {
-            $cols = getTableColumns($pdo, 'orders');
-            $pk = getOrderPrimaryKey($pdo);
-            if (in_array('files', $cols, true)) {
-                try {
-                    $stmt = $pdo->prepare("UPDATE orders SET files = ? WHERE {$pk} = ?");
-                    $stmt->execute([json_encode($savedFiles, JSON_UNESCAPED_UNICODE), $orderId]);
-                } catch (\Throwable $e) {}
-            }
-        }
-
         // Send structured Telegram Notification
         $orderData = [
             'order_id' => $orderId,
             'subject' => $subject,
             'title' => $title,
-            'work_type' => $workType,
             'description' => $description,
             'deadline' => $deadline,
             'contact' => $contact,
             'price' => $price,
             'files_count' => count($savedFiles),
             'user' => [
-                'first_name' => $authUser['username'] ?? ($input['name'] ?? 'Клиент'),
+                'first_name' => $authUser['username'] ?? ($input['name'] ?? 'Гость'),
                 'username' => $authUser['username'] ?? '',
                 'email' => $authUser['email'] ?? '',
                 'telegram' => $authUser['telegram_handle'] ?? ''
@@ -854,8 +818,7 @@ try {
 
         $orders = [];
         if ($pdo && $numericId > 0) {
-            $pk = getOrderPrimaryKey($pdo);
-            $stmt = $pdo->prepare("SELECT * FROM orders WHERE client_id = ? ORDER BY {$pk} DESC");
+            $stmt = $pdo->prepare("SELECT o.*, p.client_price, p.executer_price FROM orders o LEFT JOIN payments p ON o.order_id = p.order_id WHERE o.client_id = ? ORDER BY o.order_id DESC");
             $stmt->execute([$numericId]);
             $rows = $stmt->fetchAll();
 
@@ -920,8 +883,7 @@ try {
 
         $orders = [];
         if ($pdo) {
-            $pk = getOrderPrimaryKey($pdo);
-            $rows = $pdo->query("SELECT o.*, u.login as user_login, u.email as user_email FROM orders o LEFT JOIN users u ON o.client_id = u.id ORDER BY o.{$pk} DESC LIMIT 200")->fetchAll();
+            $rows = $pdo->query("SELECT o.*, u.login as user_login, u.email as user_email, p.client_price, p.executer_price FROM orders o LEFT JOIN users u ON o.client_id = u.id LEFT JOIN payments p ON o.order_id = p.order_id ORDER BY o.order_id DESC LIMIT 200")->fetchAll();
             foreach ($rows as $r) {
                 $orders[] = formatOrderRecord($r, $pdo);
             }
@@ -941,8 +903,7 @@ try {
         $newStatus = trim($input['status'] ?? 'pending');
 
         if ($pdo) {
-            $pk = getOrderPrimaryKey($pdo);
-            $stmt = $pdo->prepare("UPDATE orders SET status = ?, updated_at = NOW() WHERE {$pk} = ?");
+            $stmt = $pdo->prepare("UPDATE orders SET status = ? WHERE order_id = ?");
             $stmt->execute([$newStatus, $orderId]);
         }
 
@@ -957,24 +918,15 @@ try {
         }
 
         $orderId = (int)$matches[1];
-        $price = (float)($input['price'] ?? ($input['total_price'] ?? 0));
-        $prepayment = (float)($input['prepayment'] ?? 0);
+        $clientPrice = (float)($input['price'] ?? ($input['client_price'] ?? ($input['total_price'] ?? 0)));
+        $executerPrice = (float)($input['executer_price'] ?? 0);
 
         if ($pdo) {
-            $cols = getTableColumns($pdo, 'orders');
-            $pk = getOrderPrimaryKey($pdo);
-            $updates = ["price = ?"];
-            $params = [$price];
-            if (in_array('prepayment', $cols, true)) {
-                $updates[] = "prepayment = ?";
-                $params[] = $prepayment;
-            }
-            $params[] = $orderId;
-            $stmt = $pdo->prepare("UPDATE orders SET " . implode(', ', $updates) . ", updated_at = NOW() WHERE {$pk} = ?");
-            $stmt->execute($params);
+            $stmt = $pdo->prepare("INSERT INTO payments (order_id, client_price, executer_price) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE client_price = VALUES(client_price), executer_price = VALUES(executer_price)");
+            $stmt->execute([$orderId, $clientPrice, $executerPrice]);
         }
 
-        jsonResponse(['message' => 'Стоимость заказа сохранена', 'order_id' => $orderId, 'price' => $price]);
+        jsonResponse(['message' => 'Стоимость заказа сохранена в таблице payments', 'order_id' => $orderId, 'client_price' => $clientPrice, 'executer_price' => $executerPrice]);
     }
 
     // Update user status (/admin/users/:id/status)

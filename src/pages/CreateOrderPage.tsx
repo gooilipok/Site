@@ -122,11 +122,8 @@ export const CreateOrderPage: React.FC = () => {
       const payload = {
         title,
         subject: title,
-        work_type: 'Чертеж / Проект',
         description,
         deadline: deadline || 'Не указан',
-        price: 'На обсуждении',
-        client_price: 'На обсуждении',
         contact,
         files: encodedFiles,
         terms_accepted: isAuthenticated ? true : termsAccepted,
@@ -419,7 +416,7 @@ export const CreateOrderPage: React.FC = () => {
             <button
               type="submit"
               disabled={loading || user?.account_status === 'banned'}
-              className={`btn-submit-final flex items-center justify-center gap-2 ${user?.account_status === 'banned' ? 'opacity-50 cursor-not-allowed bg-gray-700' : ''}`}
+              className={`btn-submit-final flex items-center justify-center gap-2 ${loading || user?.account_status === 'banned' ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
             >
               <Send className="w-5 h-5" />
               <span>{user?.account_status === 'banned' ? 'Отправка заблокирована' : loading ? 'Публикация заказа...' : 'Отправить заказ'}</span>

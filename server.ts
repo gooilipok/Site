@@ -1516,6 +1516,23 @@ app.post('/api/orders', async (req: Request, res: Response) => {
         const finalClientId = numericClientId || 1; // Fallback to website_guest user (ID 1)
         const guestEmailVal = user ? user.email : (contact.includes('@') ? contact.trim() : (contact.startsWith('+') || contact.startsWith('8') ? contact.trim() : null));
 
+        // Anti-duplicate protection: Check if same user submitted identical order in last 15 seconds
+        try {
+          const [dupRows]: any = await dbPool.execute(
+            'SELECT order_id FROM orders WHERE client_id = ? AND subject = ? AND description = ? AND contact = ? AND created_at >= DATE_SUB(NOW(), INTERVAL 15 SECOND) ORDER BY order_id DESC LIMIT 1',
+            [finalClientId, title.trim(), description.trim(), contact.trim()]
+          );
+          if (Array.isArray(dupRows) && dupRows.length > 0) {
+            return res.status(200).json({
+              message: 'Заказ уже принят в обработку',
+              order_id: String(dupRows[0].order_id),
+              duplicate: true
+            });
+          }
+        } catch (dupErr) {
+          // Ignore duplicate check error
+        }
+
         try {
           const [insertResult]: any = await dbPool.execute(
             `INSERT INTO orders (
@@ -1554,6 +1571,18 @@ app.post('/api/orders', async (req: Request, res: Response) => {
             numericOrderId = fallbackResult.insertId;
             newOrder.id = String(fallbackResult.insertId);
             console.log(`[MySQL Orders] Fallback inserted order with order_id: ${numericOrderId}`);
+          }
+        }
+
+        // Insert into payments table
+        if (numericOrderId) {
+          try {
+            await dbPool.execute(
+              'INSERT INTO payments (order_id, client_price, executer_price) VALUES (?, 0.00, 0.00) ON DUPLICATE KEY UPDATE client_price = VALUES(client_price)',
+              [numericOrderId]
+            );
+          } catch (payErr) {
+            console.warn('[Payments Insert Notice]:', payErr);
           }
         }
       } catch (dbErr: any) {

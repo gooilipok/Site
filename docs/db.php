@@ -1,7 +1,7 @@
 <?php
 /**
  * BauSquad — Database Connection via PDO (MySQL)
- * Совместимость с официальным дампом базы данных MySQL bau7824897_db
+ * Полное соответствие структуре базы данных bau7824897_db
  */
 require_once __DIR__ . '/config.php';
 
@@ -15,97 +15,86 @@ function ensureDatabaseSchema(PDO $pdo): void {
     try {
         // 1. Create users table if missing
         $pdo->exec("CREATE TABLE IF NOT EXISTS `users` (
-            `id` INT AUTO_INCREMENT PRIMARY KEY,
-            `login` VARCHAR(64) NULL,
-            `password_hash` VARCHAR(255) NULL,
-            `email` VARCHAR(255) NULL,
-            `tg_id` BIGINT NULL,
-            `role` VARCHAR(20) NOT NULL DEFAULT 'customer',
-            `account_status` VARCHAR(20) NOT NULL DEFAULT 'active',
-            `registration_date` DATETIME NULL,
-            `is_verified` TINYINT(1) NOT NULL DEFAULT 1,
-            `telegram_handle` VARCHAR(255) DEFAULT '',
-            `user_agreement` TINYINT(1) DEFAULT 1,
-            `user_agreement_date` DATETIME NULL,
-            `privacy_agreement` TINYINT(1) DEFAULT 1,
-            `privacy_agreement_date` DATETIME NULL,
-            `processing_personal_data_agreement` TINYINT(1) DEFAULT 1,
-            `processing_personal_data_agreement_date` DATETIME NULL,
-            UNIQUE KEY `uk_users_email` (`email`),
-            UNIQUE KEY `uk_users_login` (`login`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            `id` INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            `login` VARCHAR(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+            `password_hash` VARCHAR(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+            `email` VARCHAR(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+            `tg_id` BIGINT DEFAULT NULL,
+            `role` ENUM('user','admin') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'user',
+            `account_status` ENUM('active','banned','deleted') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'active',
+            `registration_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `is_verified` TINYINT(1) NOT NULL DEFAULT '0',
+            `verification_code` VARCHAR(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+            `contact` VARCHAR(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+            `user_agreement` TINYINT(1) NOT NULL DEFAULT '0',
+            `privacy_agreement` TINYINT(1) NOT NULL DEFAULT '0',
+            `processing_personal_data_agreement` TINYINT(1) NOT NULL DEFAULT '0',
+            `user_agreement_date` DATETIME DEFAULT NULL,
+            `privacy_agreement_date` DATETIME DEFAULT NULL,
+            `processing_personal_data_agreement_date` DATETIME DEFAULT NULL,
+            `telegram_handle` VARCHAR(255) COLLATE utf8mb4_unicode_ci DEFAULT '',
+            UNIQUE KEY `login` (`login`),
+            UNIQUE KEY `email` (`email`),
+            UNIQUE KEY `tg_id` (`tg_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
         // 2. Create orders table if missing
         $pdo->exec("CREATE TABLE IF NOT EXISTS `orders` (
-            `order_id` INT AUTO_INCREMENT PRIMARY KEY,
+            `order_id` INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            `client_id` INT DEFAULT '1',
+            `executer_id` INT DEFAULT NULL,
+            `subject` VARCHAR(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+            `description` TEXT COLLATE utf8mb4_unicode_ci,
+            `deadline` VARCHAR(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+            `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `completed_at` DATETIME DEFAULT NULL,
+            `status` ENUM('new','assigned','in_progress','rework','completed','closed','cancelled') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'new',
+            `rework_count` INT NOT NULL DEFAULT '0',
+            `contact` VARCHAR(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+            `source` ENUM('telegram','website') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'website',
+            `terms_accepted` TINYINT(1) NOT NULL DEFAULT '1',
+            `privacy_accepted` TINYINT(1) NOT NULL DEFAULT '1',
+            `consent_accepted` TINYINT(1) NOT NULL DEFAULT '1',
+            `agreements_accepted_at` DATETIME DEFAULT NULL,
+            KEY `fk_orders_client` (`client_id`),
+            KEY `fk_orders_executer` (`executer_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        // 3. Create payments table if missing
+        $pdo->exec("CREATE TABLE IF NOT EXISTS `payments` (
+            `order_id` INT NOT NULL PRIMARY KEY,
+            `client_price` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            `client_payment_date` DATETIME DEFAULT NULL,
+            `executer_price` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            `executer_payment_date` DATETIME DEFAULT NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        // 4. Create support_requests table if missing
+        $pdo->exec("CREATE TABLE IF NOT EXISTS `support_requests` (
+            `id` INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
             `client_id` INT NOT NULL DEFAULT 1,
-            `executer_id` INT NULL,
-            `subject` VARCHAR(255) NOT NULL DEFAULT '',
-            `title` VARCHAR(255) DEFAULT '',
-            `work_type` VARCHAR(100) DEFAULT 'Чертеж',
-            `description` TEXT,
-            `deadline` VARCHAR(100) DEFAULT '',
-            `contact` VARCHAR(255) DEFAULT '',
-            `price` VARCHAR(100) DEFAULT 'На обсуждении',
-            `client_price` VARCHAR(100) DEFAULT 'На обсуждении',
-            `executer_price` VARCHAR(100) DEFAULT '',
-            `files` TEXT NULL,
-            `status` VARCHAR(50) NOT NULL DEFAULT 'new',
-            `created_at` DATETIME NULL,
-            `updated_at` DATETIME NULL
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            `message` TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+            `status` ENUM('new','in_progress','closed') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'new',
+            `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            KEY `fk_support_client` (`client_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
-        // 3. Create verification_codes table if it does not exist
+        // 5. Create verification_codes table if missing
         $pdo->exec("CREATE TABLE IF NOT EXISTS `verification_codes` (
-            `id` INT AUTO_INCREMENT PRIMARY KEY,
-            `email` VARCHAR(255) NOT NULL,
-            `code` VARCHAR(10) NOT NULL,
-            `expires_at` DATETIME NOT NULL,
-            `created_at` DATETIME NOT NULL,
-            INDEX `idx_email_code` (`email`, `code`)
+            `email` VARCHAR(191) NOT NULL PRIMARY KEY,
+            `code` VARCHAR(20) NOT NULL,
+            `username` VARCHAR(100) NOT NULL,
+            `password_hash` VARCHAR(255) NOT NULL,
+            `expires_at` INT NOT NULL,
+            `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-        // 4. Ensure missing columns in users table
-        $userCols = getTableColumns($pdo, 'users');
-        if (!empty($userCols)) {
-            $userAdds = [];
-            if (!in_array('telegram_handle', $userCols, true)) $userAdds[] = "ADD COLUMN `telegram_handle` VARCHAR(255) DEFAULT ''";
-            if (!in_array('tg_id', $userCols, true)) $userAdds[] = "ADD COLUMN `tg_id` VARCHAR(255) DEFAULT ''";
-            if (!in_array('user_agreement', $userCols, true)) $userAdds[] = "ADD COLUMN `user_agreement` TINYINT DEFAULT 1";
-            if (!in_array('user_agreement_date', $userCols, true)) $userAdds[] = "ADD COLUMN `user_agreement_date` DATETIME NULL";
-            if (!in_array('privacy_agreement', $userCols, true)) $userAdds[] = "ADD COLUMN `privacy_agreement` TINYINT DEFAULT 1";
-            if (!in_array('privacy_agreement_date', $userCols, true)) $userAdds[] = "ADD COLUMN `privacy_agreement_date` DATETIME NULL";
-            if (!in_array('processing_personal_data_agreement', $userCols, true)) $userAdds[] = "ADD COLUMN `processing_personal_data_agreement` TINYINT DEFAULT 1";
-            if (!in_array('processing_personal_data_agreement_date', $userCols, true)) $userAdds[] = "ADD COLUMN `processing_personal_data_agreement_date` DATETIME NULL";
-            if (!in_array('account_status', $userCols, true)) $userAdds[] = "ADD COLUMN `account_status` VARCHAR(50) DEFAULT 'active'";
-            if (!in_array('is_verified', $userCols, true)) $userAdds[] = "ADD COLUMN `is_verified` TINYINT DEFAULT 1";
+        // 6. Ensure default guest user (ID 1)
+        $pdo->exec("INSERT IGNORE INTO `users` (`id`, `login`, `password_hash`, `email`, `role`, `account_status`, `is_verified`, `registration_date`) 
+                    VALUES (1, 'website_guest', 'nopassword', 'guest@bausquad.org', 'user', 'active', 1, NOW())");
 
-            if (!empty($userAdds)) {
-                @$pdo->exec("ALTER TABLE `users` " . implode(', ', $userAdds));
-            }
-        }
-
-        // 5. Ensure missing columns in orders table
-        $orderCols = getTableColumns($pdo, 'orders');
-        if (!empty($orderCols)) {
-            $orderAdds = [];
-            if (!in_array('subject', $orderCols, true)) $orderAdds[] = "ADD COLUMN `subject` VARCHAR(255) DEFAULT ''";
-            if (!in_array('title', $orderCols, true)) $orderAdds[] = "ADD COLUMN `title` VARCHAR(255) DEFAULT ''";
-            if (!in_array('work_type', $orderCols, true)) $orderAdds[] = "ADD COLUMN `work_type` VARCHAR(100) DEFAULT 'Чертеж'";
-            if (!in_array('deadline', $orderCols, true)) $orderAdds[] = "ADD COLUMN `deadline` VARCHAR(100) DEFAULT ''";
-            if (!in_array('contact', $orderCols, true)) $orderAdds[] = "ADD COLUMN `contact` VARCHAR(255) DEFAULT ''";
-            if (!in_array('price', $orderCols, true)) $orderAdds[] = "ADD COLUMN `price` VARCHAR(100) DEFAULT 'На обсуждении'";
-            if (!in_array('client_price', $orderCols, true)) $orderAdds[] = "ADD COLUMN `client_price` VARCHAR(100) DEFAULT 'На обсуждении'";
-            if (!in_array('executer_price', $orderCols, true)) $orderAdds[] = "ADD COLUMN `executer_price` VARCHAR(100) DEFAULT ''";
-            if (!in_array('files', $orderCols, true)) $orderAdds[] = "ADD COLUMN `files` TEXT NULL";
-            if (!in_array('updated_at', $orderCols, true)) $orderAdds[] = "ADD COLUMN `updated_at` DATETIME NULL";
-
-            if (!empty($orderAdds)) {
-                @$pdo->exec("ALTER TABLE `orders` " . implode(', ', $orderAdds));
-            }
-        }
     } catch (\Throwable $e) {
-        error_log("[DB Schema Check Notice]: " . $e->getMessage());
+        error_log("[DB Schema Init Notice]: " . $e->getMessage());
     }
 }
 
@@ -124,7 +113,7 @@ function getDB(): ?PDO {
         PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         PDO::ATTR_EMULATE_PREPARES   => false,
-        PDO::ATTR_TIMEOUT            => 2, // 2 секунды таймаут
+        PDO::ATTR_TIMEOUT            => 2,
     ];
 
     foreach ($hosts as $host) {

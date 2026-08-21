@@ -1,17 +1,15 @@
--- MySQL dump 10.13  Distrib 8.0.45, for Win64 (x86_64)
---
--- Host: mysql.hosting.nic.ru    Database: bau7824897_db
--- ------------------------------------------------------
--- Server version	5.6.41
+-- MySQL dump for bau7824897_db
+-- BauSquad Database Schema (Production & Development)
 
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
---
+-- --------------------------------------------------------
 -- Table structure for table `users`
---
+-- --------------------------------------------------------
 
-CREATE TABLE IF NOT EXISTS `users` (
+DROP TABLE IF EXISTS `users`;
+CREATE TABLE `users` (
   `id` int NOT NULL AUTO_INCREMENT,
   `login` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `password_hash` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
@@ -29,17 +27,19 @@ CREATE TABLE IF NOT EXISTS `users` (
   `user_agreement_date` datetime DEFAULT NULL,
   `privacy_agreement_date` datetime DEFAULT NULL,
   `processing_personal_data_agreement_date` datetime DEFAULT NULL,
+  `telegram_handle` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT '',
   PRIMARY KEY (`id`),
   UNIQUE KEY `login` (`login`),
   UNIQUE KEY `email` (`email`),
   UNIQUE KEY `tg_id` (`tg_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
---
+-- --------------------------------------------------------
 -- Table structure for table `orders`
---
+-- --------------------------------------------------------
 
-CREATE TABLE IF NOT EXISTS `orders` (
+DROP TABLE IF EXISTS `orders`;
+CREATE TABLE `orders` (
   `order_id` int NOT NULL AUTO_INCREMENT,
   `client_id` int DEFAULT '1',
   `executer_id` int DEFAULT NULL,
@@ -56,7 +56,6 @@ CREATE TABLE IF NOT EXISTS `orders` (
   `privacy_accepted` tinyint(1) NOT NULL DEFAULT '1',
   `consent_accepted` tinyint(1) NOT NULL DEFAULT '1',
   `agreements_accepted_at` datetime DEFAULT NULL,
-  `guest_email` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   PRIMARY KEY (`order_id`),
   KEY `fk_orders_client` (`client_id`),
   KEY `fk_orders_executer` (`executer_id`),
@@ -64,11 +63,12 @@ CREATE TABLE IF NOT EXISTS `orders` (
   CONSTRAINT `fk_orders_executer` FOREIGN KEY (`executer_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
---
+-- --------------------------------------------------------
 -- Table structure for table `payments`
---
+-- --------------------------------------------------------
 
-CREATE TABLE IF NOT EXISTS `payments` (
+DROP TABLE IF EXISTS `payments`;
+CREATE TABLE `payments` (
   `order_id` int NOT NULL,
   `client_price` decimal(10,2) NOT NULL DEFAULT 0.00,
   `client_payment_date` datetime DEFAULT NULL,
@@ -78,11 +78,12 @@ CREATE TABLE IF NOT EXISTS `payments` (
   CONSTRAINT `fk_payments_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`order_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
---
+-- --------------------------------------------------------
 -- Table structure for table `support_requests`
---
+-- --------------------------------------------------------
 
-CREATE TABLE IF NOT EXISTS `support_requests` (
+DROP TABLE IF EXISTS `support_requests`;
+CREATE TABLE `support_requests` (
   `id` int NOT NULL AUTO_INCREMENT,
   `client_id` int NOT NULL DEFAULT 1,
   `message` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -93,11 +94,12 @@ CREATE TABLE IF NOT EXISTS `support_requests` (
   CONSTRAINT `fk_support_client` FOREIGN KEY (`client_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
---
+-- --------------------------------------------------------
 -- Table structure for table `verification_codes`
---
+-- --------------------------------------------------------
 
-CREATE TABLE IF NOT EXISTS `verification_codes` (
+DROP TABLE IF EXISTS `verification_codes`;
+CREATE TABLE `verification_codes` (
   `email` varchar(191) NOT NULL,
   `code` varchar(20) NOT NULL,
   `username` varchar(100) NOT NULL,
@@ -107,11 +109,11 @@ CREATE TABLE IF NOT EXISTS `verification_codes` (
   PRIMARY KEY (`email`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
---
--- Default Initial Records
---
+-- --------------------------------------------------------
+-- Initial Data
+-- --------------------------------------------------------
 
-INSERT IGNORE INTO `users` (`id`, `login`, `email`, `password_hash`, `role`, `account_status`, `is_verified`, `registration_date`)
-VALUES (1, 'website_guest', 'guest@bausquad.org', 'nopassword', 'user', 'active', 1, NOW());
+INSERT IGNORE INTO `users` (`id`, `login`, `password_hash`, `email`, `tg_id`, `role`, `account_status`, `registration_date`, `is_verified`, `verification_code`, `contact`, `user_agreement`, `privacy_agreement`, `processing_personal_data_agreement`, `user_agreement_date`, `privacy_agreement_date`, `processing_personal_data_agreement_date`, `telegram_handle`) VALUES
+(1, 'website_guest', 'nopassword', 'guest@bausquad.org', NULL, 'user', 'active', '2026-08-15 22:40:22', 1, NULL, NULL, 0, 0, 0, NULL, NULL, NULL, '');
 
 SET FOREIGN_KEY_CHECKS = 1;

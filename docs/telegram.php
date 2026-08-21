@@ -1,40 +1,33 @@
 <?php
 /**
- * BauSquad — Telegram Bot API Service (Docs Level)
- * Отправка структурированных карточек заказов, фото и документов
- * Полная защита от зависаний сокетов и 502 Bad Gateway таймаутов на хостинге
+ * BauSquad — Telegram Bot API Service (Root & Docs Level)
+ * Отправка структурированных карточек заказов, фото в шапке и документов отдельным сообщением
+ * Полная совместимость с Cloudflare Worker реверс-прокси и cURL SOCKS5/HTTP прокси
  */
 require_once __DIR__ . '/config.php';
 
 function formatTelegramOrderCard(array $data): string {
     $orderId = !empty($data['order_id']) ? $data['order_id'] : 'Новый';
-    $orderHeader = "📋 <b>Заказ #{$orderId}</b>\n\n";
 
     $user = $data['user'] ?? [];
-    $firstName = htmlspecialchars($user['first_name'] ?? ($user['username'] ?? 'Клиент'), ENT_QUOTES, 'UTF-8');
-    $userEmail = !empty($user['email']) ? " (" . htmlspecialchars($user['email'], ENT_QUOTES, 'UTF-8') . ")" : '';
-    $tgHandle = !empty($user['telegram']) ? " [@" . ltrim($user['telegram'], '@') . "]" : (!empty($user['username']) && $user['username'] !== $firstName ? " (@" . ltrim($user['username'], '@') . ")" : '');
+    $customerName = 'Гость';
+    if (!empty($user['username']) && $user['username'] !== 'Гость (Без регистрации)' && $user['username'] !== 'website_guest') {
+        $customerName = $user['username'];
+    } elseif (!empty($user['first_name']) && $user['first_name'] !== 'Гость (Без регистрации)' && $user['first_name'] !== 'Клиент') {
+        $customerName = $user['first_name'];
+    }
 
-    $userBlock = "👤 <b>Заказчик:</b> {$firstName}{$userEmail}{$tgHandle}\n\n";
-    $subject = htmlspecialchars($data['subject'] ?? ($data['title'] ?? 'Без темы'), ENT_QUOTES, 'UTF-8');
-    $workType = htmlspecialchars($data['work_type'] ?? 'Чертеж / Проект', ENT_QUOTES, 'UTF-8');
-    $description = htmlspecialchars($data['description'] ?? 'Без описания', ENT_QUOTES, 'UTF-8');
-    $deadline = htmlspecialchars($data['deadline'] ?? 'Не указан', ENT_QUOTES, 'UTF-8');
-    $contact = htmlspecialchars($data['contact'] ?? 'Не указан', ENT_QUOTES, 'UTF-8');
-    $price = htmlspecialchars($data['price'] ?? 'На обсуждении', ENT_QUOTES, 'UTF-8');
-    $filesCount = !empty($data['files_count']) ? (int)$data['files_count'] : 0;
+    $subject = $data['subject'] ?? ($data['title'] ?? 'Без темы');
+    $description = $data['description'] ?? 'Без описания';
+    $deadline = $data['deadline'] ?? 'Не указан';
+    $contact = $data['contact'] ?? 'Не указан';
 
-    $filesBlock = ($filesCount > 0) ? "\n\n📎 <b>Прикреплено файлов:</b> {$filesCount} шт." : "";
-
-    return $orderHeader .
-        $userBlock .
-        "📘 <b>Предмет / Тема:</b>\n{$subject}\n\n" .
-        "📐 <b>Тип работы:</b>\n{$workType}\n\n" .
-        "📝 <b>Описание:</b>\n{$description}\n\n" .
-        "⏰ <b>Срок (дедлайн):</b>\n{$deadline}\n\n" .
-        "💰 <b>Бюджет:</b>\n{$price}\n\n" .
-        "📞 <b>Контакты:</b>\n{$contact}" .
-        $filesBlock;
+    return "📋 <b>Заказ №{$orderId}</b>\n\n" .
+           "👤 <b>Заказчик:</b>\n" . htmlspecialchars((string)$customerName, ENT_QUOTES, 'UTF-8') . "\n\n" .
+           "📘 <b>Предмет:</b>\n" . htmlspecialchars((string)$subject, ENT_QUOTES, 'UTF-8') . "\n\n" .
+           "📝 <b>Описание:</b>\n" . htmlspecialchars((string)$description, ENT_QUOTES, 'UTF-8') . "\n\n" .
+           "⏰ <b>Срок:</b>\n" . htmlspecialchars((string)$deadline, ENT_QUOTES, 'UTF-8') . "\n\n" .
+           "📞 <b>Контакты:</b>\n" . htmlspecialchars((string)$contact, ENT_QUOTES, 'UTF-8');
 }
 
 function getMimeTypeSafely($filePath, $default = 'application/octet-stream'): string {
@@ -49,7 +42,8 @@ function getMimeTypeSafely($filePath, $default = 'application/octet-stream'): st
         'pdf' => 'application/pdf', 'txt' => 'text/plain',
         'doc' => 'application/msword', 'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         'xls' => 'application/vnd.ms-excel', 'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'zip' => 'application/zip', 'rar' => 'application/x-rar-compressed', '7z' => 'application/x-7z-compressed'
+        'zip' => 'application/zip', 'rar' => 'application/x-rar-compressed', '7z' => 'application/x-7z-compressed',
+        'dwg' => 'application/acad', 'dxf' => 'application/dxf'
     ];
     return $map[$ext] ?? $default;
 }
@@ -74,18 +68,14 @@ function sendTelegramRequest($endpoint, $postData, $isMultipart = false, $timeou
     // 1. Configured Reverse Proxy (Cloudflare Worker or custom domain mirror)
     if (!empty($proxy)) {
         $cleanProxy = rtrim($proxy, '/');
-        // Format A: https://proxy-domain/bot<TOKEN>/<ENDPOINT>
         $endpoints[] = "{$cleanProxy}/bot{$token}/{$endpoint}";
-        // Format B: https://proxy-domain/<ENDPOINT>
         $endpoints[] = "{$cleanProxy}/{$endpoint}";
     }
 
     // 2. Direct Telegram API
     $endpoints[] = "https://api.telegram.org/bot{$token}/{$endpoint}";
 
-    // Ensure unique endpoints
     $endpoints = array_unique($endpoints);
-
     $attemptLogs = [];
     $lastError = 'Unknown Telegram error';
 
@@ -98,7 +88,7 @@ function sendTelegramRequest($endpoint, $postData, $isMultipart = false, $timeou
                     @curl_setopt($ch, CURLOPT_POST, true);
                     @curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
                     @curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, (int)$timeoutSeconds);
-                    @curl_setopt($ch, CURLOPT_TIMEOUT, (int)$timeoutSeconds + 2);
+                    @curl_setopt($ch, CURLOPT_TIMEOUT, (int)$timeoutSeconds + 3);
                     @curl_setopt($ch, CURLOPT_NOSIGNAL, 1);
                     @curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
                     @curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
@@ -106,7 +96,6 @@ function sendTelegramRequest($endpoint, $postData, $isMultipart = false, $timeou
                     @curl_setopt($ch, CURLOPT_MAXREDIRS, 3);
                     @curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (compatible; BauSquadBot/2.0; +https://bausquad.org)');
 
-                    // Apply Forward Proxy (SOCKS5 / HTTP) if specified
                     if (!empty($curlProxy)) {
                         @curl_setopt($ch, CURLOPT_PROXY, $curlProxy);
                         if (stripos($curlProxy, 'socks5h://') === 0) {
@@ -160,7 +149,6 @@ function sendTelegramRequest($endpoint, $postData, $isMultipart = false, $timeou
             }
         }
 
-        // Fallback to file_get_contents if curl not available and not multipart
         if (!$isMultipart && ini_get('allow_url_fopen')) {
             try {
                 $opts = [
@@ -215,15 +203,14 @@ function sendTelegramMessage($text, $chatId = null): array {
     ]);
 }
 
-/**
- * Алиас для обратной совместимости с диагностикой и скриптами
- */
 function sendTelegramNotification($text, $chatId = null): array {
     return sendTelegramMessage($text, $chatId);
 }
 
 /**
- * Отправка заказа с фото и документами
+ * Отправка заказа:
+ * 1. Карточка заказа отправляется в шапке вместе с прикрепленными фото (sendPhoto / sendMediaGroup) или как сообщение
+ * 2. Документы (не фото) отправляются следом вторым сообщением (sendDocument)
  */
 function sendTelegramOrder(array $orderData, array $files = []): array {
     try {
@@ -253,24 +240,34 @@ function sendTelegramOrder(array $orderData, array $files = []): array {
             }
         }
 
-        // 1. Отправка фото или текстового сообщения
+        $mainResult = null;
+
+        // 1. Отправка фото в шапке карточки заказа или обычным сообщением
         if (empty($photos)) {
-            return sendTelegramMessage($text, $chatId);
+            $mainResult = sendTelegramMessage($text, $chatId);
         } elseif (count($photos) === 1) {
             $photo = $photos[0];
             $mimeType = getMimeTypeSafely($photo['path'], 'image/jpeg');
-            $postData = [
-                'chat_id' => $chatId,
-                'caption' => mb_strlen($text) <= 1024 ? $text : "📸 <b>Фото к заказу #{$orderId}</b>",
-                'parse_mode' => 'HTML',
-                'photo' => new CURLFile($photo['path'], $mimeType, $photo['name'])
-            ];
-            if (mb_strlen($text) > 1024) {
-                sendTelegramMessage($text, $chatId);
+
+            if (mb_strlen($text) <= 1024) {
+                $postData = [
+                    'chat_id' => $chatId,
+                    'caption' => $text,
+                    'parse_mode' => 'HTML',
+                    'photo' => new CURLFile($photo['path'], $mimeType, $photo['name'])
+                ];
+                $mainResult = sendTelegramRequest('sendPhoto', $postData, true);
+            } else {
+                $mainResult = sendTelegramMessage($text, $chatId);
+                $photoPost = [
+                    'chat_id' => $chatId,
+                    'photo' => new CURLFile($photo['path'], $mimeType, $photo['name'])
+                ];
+                sendTelegramRequest('sendPhoto', $photoPost, true);
             }
-            return sendTelegramRequest('sendPhoto', $postData, true);
         } else {
-            if (mb_strlen($text) > 1024) {
+            $isCaptionInMedia = mb_strlen($text) <= 1024;
+            if (!$isCaptionInMedia) {
                 sendTelegramMessage($text, $chatId);
             }
 
@@ -283,8 +280,8 @@ function sendTelegramOrder(array $orderData, array $files = []): array {
                     'type' => 'photo',
                     'media' => "attach://{$attachKey}"
                 ];
-                if ($idx === 0) {
-                    $item['caption'] = mb_strlen($text) <= 1024 ? $text : "📸 <b>Фото к заказу #{$orderId}</b> (" . count($photos) . " шт.)";
+                if ($idx === 0 && $isCaptionInMedia) {
+                    $item['caption'] = $text;
                     $item['parse_mode'] = 'HTML';
                 }
                 $mediaGroup[] = $item;
@@ -293,24 +290,38 @@ function sendTelegramOrder(array $orderData, array $files = []): array {
             }
 
             $postData['media'] = json_encode($mediaGroup);
-            $res = sendTelegramRequest('sendMediaGroup', $postData, true);
+            $mainResult = sendTelegramRequest('sendMediaGroup', $postData, true);
 
-            // 2. Отправка документов
-            if (!empty($documents)) {
-                foreach ($documents as $doc) {
-                    $mimeType = getMimeTypeSafely($doc['path'], 'application/octet-stream');
-                    $docPostData = [
+            if (!$mainResult['ok']) {
+                if ($isCaptionInMedia) {
+                    sendTelegramMessage($text, $chatId);
+                }
+                foreach ($photos as $photo) {
+                    $mimeType = getMimeTypeSafely($photo['path'], 'image/jpeg');
+                    $singlePost = [
                         'chat_id' => $chatId,
-                        'caption' => "📎 <b>Документ к заказу #{$orderId}:</b>\n" . htmlspecialchars($doc['name']),
-                        'parse_mode' => 'HTML',
-                        'document' => new CURLFile($doc['path'], $mimeType, $doc['name'])
+                        'photo' => new CURLFile($photo['path'], $mimeType, $photo['name'])
                     ];
-                    sendTelegramRequest('sendDocument', $docPostData, true);
+                    sendTelegramRequest('sendPhoto', $singlePost, true);
                 }
             }
-
-            return $res;
         }
+
+        // 2. Отправка документов ВТОРЫМ сообщением
+        if (!empty($documents)) {
+            foreach ($documents as $doc) {
+                $mimeType = getMimeTypeSafely($doc['path'], 'application/octet-stream');
+                $docPostData = [
+                    'chat_id' => $chatId,
+                    'caption' => "📎 Файл к заказу №{$orderId}: " . htmlspecialchars($doc['name'], ENT_QUOTES, 'UTF-8'),
+                    'parse_mode' => 'HTML',
+                    'document' => new CURLFile($doc['path'], $mimeType, $doc['name'])
+                ];
+                sendTelegramRequest('sendDocument', $docPostData, true);
+            }
+        }
+
+        return $mainResult ?: ['ok' => true];
     } catch (\Throwable $e) {
         error_log("[sendTelegramOrder Exception]: " . $e->getMessage());
         return ['ok' => false, 'error' => $e->getMessage()];

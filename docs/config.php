@@ -95,8 +95,10 @@ define('DB_PASS', env('MYSQL_PASSWORD', 'AhTFV6g/'));
 
 // 4. Telegram Bot API Settings
 define('TELEGRAM_BOT_TOKEN', env('TELEGRAM_BOT_TOKEN', '8655510215:AAHD2y49HbYoXn1lXVbu81sf77Ng9rUPuW8'));
-define('TELEGRAM_CHAT_ID', env('TELEGRAM_CHAT_ID', '-1003463870817'));
+define('TELEGRAM_CHAT_ID', env('TELEGRAM_CHAT_ID', env('TELEGRAM_ADMIN_CHAT_ID', '-1003463870817')));
+define('TELEGRAM_ADMIN_CHAT_ID', env('TELEGRAM_ADMIN_CHAT_ID', '-1003463870817'));
 define('TELEGRAM_API_PROXY', env('TELEGRAM_API_PROXY', 'https://odd.gooilipok2.workers.dev/'));
+define('TELEGRAM_CURL_PROXY', env('TELEGRAM_CURL_PROXY', env('TELEGRAM_PROXY', '')));
 
 // 5. SMTP Mail Settings
 define('SMTP_HOST', env('SMTP_HOST', 'mail.nic.ru'));

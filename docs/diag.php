@@ -230,18 +230,36 @@ if ($action === 'init_db' && $pdo) {
     }
 } elseif ($action === 'send_tg_message' || $action === 'test_telegram' || $action === 'test_tg') {
     try {
-        $testMsg = "🧪 <b>BauSquad — Тестовое сообщение</b>\n"
-                 . "Время: " . date('Y-m-d H:i:s') . "\n"
-                 . "Сервер: " . ($_SERVER['SERVER_NAME'] ?? 'bausquad.org') . "\n"
-                 . "Статус: Все системы работают штатно.";
-        $sendRes = sendTelegramMessage($testMsg);
-        $isOk = !empty($sendRes['ok']);
-        $results['action_result'] = [
-            'action' => $action,
-            'success' => $isOk,
-            'message' => $isOk ? 'Тестовое сообщение успешно доставлено в Telegram чат/канал!' : ('Ошибка Telegram API: ' . ($sendRes['error'] ?? json_encode($sendRes, JSON_UNESCAPED_UNICODE))),
-            'response' => $sendRes
-        ];
+        $customProxy = !empty($_GET['custom_proxy']) ? trim($_GET['custom_proxy']) : null;
+        if ($action === 'test_telegram' || $action === 'test_tg') {
+            $sendRes = sendTelegramRequest('getMe', [], false, 5, $customProxy);
+            $isOk = !empty($sendRes['ok']);
+            $results['action_result'] = [
+                'action' => $action,
+                'success' => $isOk,
+                'message' => $isOk ? ('Соединение с Telegram успешно! Бот: @' . ($sendRes['data']['result']['username'] ?? 'Unknown')) : ('Ошибка Telegram API: ' . ($sendRes['error'] ?? 'No response')),
+                'proxy_tested' => $customProxy ?: (defined('TELEGRAM_API_PROXY') ? TELEGRAM_API_PROXY : 'None'),
+                'response' => $sendRes
+            ];
+        } else {
+            $testMsg = "🧪 <b>BauSquad — Тестовое сообщение</b>\n"
+                     . "Время: " . date('Y-m-d H:i:s') . "\n"
+                     . "Сервер: " . ($_SERVER['SERVER_NAME'] ?? 'bausquad.org') . "\n"
+                     . "Статус: Все системы работают штатно.";
+            $sendRes = sendTelegramRequest('sendMessage', [
+                'chat_id' => defined('TELEGRAM_CHAT_ID') ? TELEGRAM_CHAT_ID : '',
+                'text' => $testMsg,
+                'parse_mode' => 'HTML'
+            ], false, 5, $customProxy);
+            $isOk = !empty($sendRes['ok']);
+            $results['action_result'] = [
+                'action' => $action,
+                'success' => $isOk,
+                'message' => $isOk ? 'Тестовое сообщение успешно доставлено в Telegram чат/канал!' : ('Ошибка Telegram API: ' . ($sendRes['error'] ?? json_encode($sendRes, JSON_UNESCAPED_UNICODE))),
+                'proxy_tested' => $customProxy ?: (defined('TELEGRAM_API_PROXY') ? TELEGRAM_API_PROXY : 'None'),
+                'response' => $sendRes
+            ];
+        }
     } catch (\Throwable $e) {
         $results['action_result'] = [
             'action' => $action,
@@ -530,17 +548,26 @@ if ($format === 'json' || isset($_GET['json'])) {
             <div>
                 <div class="row"><span class="label">Токен бота:</span><span class="val"><?= !empty(TELEGRAM_BOT_TOKEN) ? 'Установлен (****' . substr(TELEGRAM_BOT_TOKEN, -6) . ')' : 'НЕ УСТАНОВЛЕН' ?></span></div>
                 <div class="row"><span class="label">ID Чат / Канал:</span><span class="val"><?= htmlspecialchars(TELEGRAM_CHAT_ID ?: 'Не указан') ?></span></div>
+                <div class="row"><span class="label">Форвард Прокси (cURL):</span><span class="val"><?= defined('TELEGRAM_CURL_PROXY') && TELEGRAM_CURL_PROXY ? htmlspecialchars(TELEGRAM_CURL_PROXY) : 'Не задан (прямой cURL)' ?></span></div>
             </div>
             <div>
-                <div class="row"><span class="label">Прокси-сервер:</span><span class="val"><?= htmlspecialchars(TELEGRAM_API_PROXY) ?></span></div>
-                <div class="row"><span class="label">Статус проверки:</span><span class="val"><?= json_encode($results['checks']['telegram']['response'], JSON_UNESCAPED_UNICODE) ?></span></div>
+                <div class="row"><span class="label">Реверс Прокси (URL):</span><span class="val"><?= htmlspecialchars(TELEGRAM_API_PROXY ?: 'https://api.telegram.org') ?></span></div>
+                <div class="row"><span class="label">Статус проверки:</span><span class="val"><?= htmlspecialchars($results['checks']['telegram']['response']['ping_ok'] ? 'OK (Бот: @' . ($results['checks']['telegram']['response']['bot_username'] ?? '') . ')' : 'Ошибка: ' . ($results['checks']['telegram']['response']['ping_error'] ?? 'Нет ответа')) ?></span></div>
             </div>
         </div>
 
-        <div class="actions-bar">
-            <a href="?action=test_telegram" class="btn btn-outline">🔍 Пинг Telegram (getMe)</a>
-            <a href="?action=send_tg_message" class="btn">✉️ Отправить тестовое сообщение в Telegram</a>
-        </div>
+        <form method="GET" style="margin-top: 16px; background: rgba(0,0,0,0.2); padding: 14px; border-radius: 8px; border: 1px solid var(--border);">
+            <div style="font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #fff;">🧪 Тестирование Telegram с произвольным прокси / Worker URL:</div>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+                <input type="text" name="custom_proxy" placeholder="https://odd.gooilipok2.workers.dev/ или socks5://ip:port" value="<?= htmlspecialchars($_GET['custom_proxy'] ?? (TELEGRAM_API_PROXY ?: '')) ?>" style="flex: 1; min-width: 280px; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border); color: #fff; border-radius: 6px; font-size: 13px; font-family: monospace;">
+                <button type="submit" name="action" value="test_telegram" class="btn btn-outline" style="padding: 8px 14px; font-size: 13px;">🔍 Проверить (getMe)</button>
+                <button type="submit" name="action" value="send_tg_message" class="btn" style="padding: 8px 14px; font-size: 13px;">✉️ Отправить тестовое</button>
+            </div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px; line-height: 1.4;">
+                💡 <b>Почему возникает Connection timed out на хостинге nic.ru / RU-CENTER:</b><br>
+                Прямой IP-доступ к <code>api.telegram.org:443</code> блокируется хостинг-провайдерами в РФ. Для работы уведомлений используйте Cloudflare Worker или прикрепите к воркеру поддомен (например, <code>tg.bausquad.org</code>).
+            </div>
+        </form>
     </div>
 
     <!-- 4. Почтовый сервер (SMTP / Email) -->

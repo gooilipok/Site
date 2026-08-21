@@ -54,25 +54,33 @@ function getMimeTypeSafely($filePath, $default = 'application/octet-stream'): st
     return $map[$ext] ?? $default;
 }
 
-function sendTelegramRequest($endpoint, $postData, $isMultipart = false, $timeoutSeconds = 2): array {
+function sendTelegramRequest($endpoint, $postData, $isMultipart = false, $timeoutSeconds = 4, $customProxy = null): array {
     $token = defined('TELEGRAM_BOT_TOKEN') ? TELEGRAM_BOT_TOKEN : '';
     if (empty($token)) {
         return ['ok' => false, 'error' => 'Bot token is empty'];
     }
 
-    $proxy = defined('TELEGRAM_API_PROXY') ? trim(TELEGRAM_API_PROXY) : '';
+    $proxy = $customProxy !== null ? trim($customProxy) : (defined('TELEGRAM_API_PROXY') ? trim(TELEGRAM_API_PROXY) : '');
+    $curlProxy = defined('TELEGRAM_CURL_PROXY') ? trim(TELEGRAM_CURL_PROXY) : '';
+
+    // If proxy string is formatted as socks5:// or http:// with port, treat as cURL forward proxy
+    if (preg_match('/^(socks5|socks5h|http|https):\/\/[^\/]+:\d+/i', $proxy)) {
+        $curlProxy = $proxy;
+        $proxy = '';
+    }
+
     $endpoints = [];
 
-    // 1. Configured proxy (e.g. Cloudflare Worker reverse proxy)
+    // 1. Configured Reverse Proxy (Cloudflare Worker or custom domain mirror)
     if (!empty($proxy)) {
         $cleanProxy = rtrim($proxy, '/');
-        // Format A: https://worker.dev/bot<TOKEN>/<ENDPOINT>
+        // Format A: https://proxy-domain/bot<TOKEN>/<ENDPOINT>
         $endpoints[] = "{$cleanProxy}/bot{$token}/{$endpoint}";
-        // Format B: https://worker.dev/<ENDPOINT>
+        // Format B: https://proxy-domain/<ENDPOINT>
         $endpoints[] = "{$cleanProxy}/{$endpoint}";
     }
 
-    // 2. Direct Telegram Bot API (Fallback)
+    // 2. Direct Telegram API
     $endpoints[] = "https://api.telegram.org/bot{$token}/{$endpoint}";
 
     // Ensure unique endpoints
@@ -89,13 +97,26 @@ function sendTelegramRequest($endpoint, $postData, $isMultipart = false, $timeou
                     @curl_setopt($ch, CURLOPT_URL, $url);
                     @curl_setopt($ch, CURLOPT_POST, true);
                     @curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                    // Fast connection & transfer timeouts to prevent FastCGI 502
                     @curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, (int)$timeoutSeconds);
-                    @curl_setopt($ch, CURLOPT_TIMEOUT, (int)$timeoutSeconds + 1);
+                    @curl_setopt($ch, CURLOPT_TIMEOUT, (int)$timeoutSeconds + 2);
                     @curl_setopt($ch, CURLOPT_NOSIGNAL, 1);
                     @curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
                     @curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-                    @curl_setopt($ch, CURLOPT_USERAGENT, 'BauSquad-BotClient/1.0');
+                    @curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+                    @curl_setopt($ch, CURLOPT_MAXREDIRS, 3);
+                    @curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (compatible; BauSquadBot/2.0; +https://bausquad.org)');
+
+                    // Apply Forward Proxy (SOCKS5 / HTTP) if specified
+                    if (!empty($curlProxy)) {
+                        @curl_setopt($ch, CURLOPT_PROXY, $curlProxy);
+                        if (stripos($curlProxy, 'socks5h://') === 0) {
+                            @curl_setopt($ch, CURLOPT_PROXYTYPE, CURLPROXY_SOCKS5_HOSTNAME);
+                        } elseif (stripos($curlProxy, 'socks5://') === 0) {
+                            @curl_setopt($ch, CURLOPT_PROXYTYPE, CURLPROXY_SOCKS5);
+                        } elseif (stripos($curlProxy, 'http://') === 0 || stripos($curlProxy, 'https://') === 0) {
+                            @curl_setopt($ch, CURLOPT_PROXYTYPE, CURLPROXY_HTTP);
+                        }
+                    }
 
                     if ($isMultipart) {
                         @curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
@@ -108,13 +129,14 @@ function sendTelegramRequest($endpoint, $postData, $isMultipart = false, $timeou
                     }
 
                     $response = @curl_exec($ch);
-                    $httpCode = @curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                    $httpCode = (int)@curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                    $curlErrNo = @curl_errno($ch);
                     $error = @curl_error($ch);
                     @curl_close($ch);
 
                     if ($response) {
                         $json = @json_decode($response, true);
-                        if (!empty($json['ok'])) {
+                        if (is_array($json) && !empty($json['ok'])) {
                             return [
                                 'ok' => true,
                                 'url_used' => $url,
@@ -123,12 +145,12 @@ function sendTelegramRequest($endpoint, $postData, $isMultipart = false, $timeou
                                 'attempts' => $attemptLogs
                             ];
                         }
-                        $desc = $json['description'] ?? ($json['error'] ?? "HTTP {$httpCode}");
-                        $attemptLogs[] = "{$url} -> {$desc}";
+                        $desc = $json['description'] ?? ($json['error'] ?? "HTTP {$httpCode}: " . substr(strip_tags((string)$response), 0, 150));
+                        $attemptLogs[] = "{$url} [HTTP {$httpCode}] -> {$desc}";
                         $lastError = $desc;
                     } else {
-                        $attemptLogs[] = "{$url} -> " . ($error ?: 'Timeout/No response');
-                        $lastError = $error ?: 'No response / network timeout';
+                        $attemptLogs[] = "{$url} [cURL error {$curlErrNo}] -> " . ($error ?: 'Timeout/No response');
+                        $lastError = $error ?: 'Timeout/No response';
                     }
                 } catch (\Throwable $e) {
                     @curl_close($ch);
@@ -138,13 +160,13 @@ function sendTelegramRequest($endpoint, $postData, $isMultipart = false, $timeou
             }
         }
 
-        // Fallback to file_get_contents if curl didn't succeed and not multipart
+        // Fallback to file_get_contents if curl not available and not multipart
         if (!$isMultipart && ini_get('allow_url_fopen')) {
             try {
                 $opts = [
                     'http' => [
                         'method' => 'POST',
-                        'header' => "Content-Type: application/json\r\nUser-Agent: BauSquad-BotClient/1.0\r\n",
+                        'header' => "Content-Type: application/json\r\nUser-Agent: Mozilla/5.0 (compatible; BauSquadBot/2.0)\r\n",
                         'content' => json_encode($postData, JSON_UNESCAPED_UNICODE),
                         'timeout' => $timeoutSeconds,
                         'ignore_errors' => true
@@ -154,11 +176,15 @@ function sendTelegramRequest($endpoint, $postData, $isMultipart = false, $timeou
                         'verify_peer_name' => false
                     ]
                 ];
+                if (!empty($curlProxy) && (stripos($curlProxy, 'http://') === 0 || stripos($curlProxy, 'https://') === 0)) {
+                    $opts['http']['proxy'] = str_replace(['http://', 'https://'], 'tcp://', $curlProxy);
+                    $opts['http']['request_fulluri'] = true;
+                }
                 $context = @stream_context_create($opts);
                 $res = @file_get_contents($url, false, $context);
                 if ($res) {
                     $json = @json_decode($res, true);
-                    if (!empty($json['ok'])) {
+                    if (is_array($json) && !empty($json['ok'])) {
                         return [
                             'ok' => true,
                             'url_used' => $url . ' (via fopen)',

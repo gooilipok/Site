@@ -1,102 +1,52 @@
-# BauSquad — Платформа Заказа Студенческих Работ
+# BauSquad — Платформа Заказа Студенческих и Инженерных Работ
 
-**BauSquad** — Полностью переработанная полнофункциональная инженерная веб-платформа для заказа и автоматизации студенческих и научно-исследовательских работ. Проект построен на микросервисной архитектуре, полностью разделяющей Frontend и Backend, с поддержкой MySQL, Telegram Bot API, SMTP уведомлений и развёртыванием через Docker Compose на VPS.
+**BauSquad** — полнофункциональная инженерная веб-платформа для оформления, расчёта и управления заказами студенческих и научно-исследовательских работ. 
 
----
-
-## 🛠 Стек технологий
-
-### Frontend
-- **React 19** + **TypeScript**
-- **Vite** (сборщик и Dev Сервер)
-- **React Router 7** (маршрутизация)
-- **Tailwind CSS 4** (стили)
-- **Lucide React** (иконки)
-- **JWT Authentication** (access + refresh токены с автоматическим продлением сессий)
-
-### Backend (Production VPS)
-- **Python 3.13** + **FastAPI**
-- **SQLAlchemy 2.0 ORM** (работа с СУБД)
-- **Alembic** (миграции структуры БД)
-- **Pydantic v2** (валидация данных)
-- **Passlib & bcrypt** (хэширование паролей)
-- **python-telegram-bot / httpx** (Telegram Bot API)
-- **SMTP mailer** (подтверждение почты кодом)
-
-### База Данных & Инфраструктура
-- **MySQL 8.0**
-- **Docker & Docker Compose**
+Платформа поддерживает двойной режим работы:
+1. **PHP/MySQL на классическом веб-хостинге** (RU-CENTER / nic.ru, cPanel, Apache/Nginx).
+2. **Node.js / TypeScript Full-stack** (локальная разработка и VPS).
 
 ---
 
-## 📁 Структура проекта
+## 📁 Структура проекта и назначение файлов
 
-```
-/
-├── backend/                  # Исходный код Python FastAPI (VPS Production)
-│   ├── app/
-│   │   ├── api/v1/          # REST API Эндпоинты
-│   │   ├── core/            # Настройки, JWT и безопасность (bcrypt)
-│   │   ├── db/              # SQLAlchemy сессия и Base
-│   │   ├── models/          # ORM Модели (User, Order, Agreements)
-│   │   ├── schemas/         # Pydantic схемы
-│   │   ├── services/        # Telegram Bot API & SMTP почтовый модуль
-│   │   └── main.py          # Точка входа FastAPI
-│   ├── Dockerfile           # Контейнер FastAPI
-│   └── requirements.txt     # Зависимости Python
-│
-├── src/                      # Исходный код Frontend (React 19)
-│   ├── components/          # Компоненты (Navbar, Footer, CookieBanner)
-│   ├── context/             # React Context (AuthContext)
-│   ├── pages/               # Страницы (HomePage, RegisterPage, ProfilePage, AdminPage и др.)
-│   ├── types.ts             # TypeScript интерфейсы
-│   └── index.css            # Инженерная металлическая тема (BauSquad Metal Dark)
-│
-├── server.ts                 # Fullstack Express API сервер
-├── docker-compose.yml        # Docker Compose конфигурация для VPS
-├── Dockerfile.frontend       # Контейнер Frontend
-├── .env.example              # Пример переменных окружения
-└── README.md
-```
+| Файл / Каталог | Описание и ответственность |
+| :--- | :--- |
+| **`api.php`** / `docs/api.php` | **Центральный REST API**. Регистрация с кодом подтверждения почты, вход (JWT), создание заказов, загрузка файлов, обратная связь. |
+| **`config.php`** / `docs/config.php` | **Конфигурация**. Загрузка `.env`, константы БД, токенов, SMTP и параметров прокси для Telegram. |
+| **`db.php`** / `docs/db.php` | **База данных MySQL**. PDO-подключение, подготовленные запросы и автоматическая инициализация таблиц. |
+| **`jwt.php`** / `docs/jwt.php` | **Безопасность и JWT**. Создание, валидация и проверка подписей HMAC-SHA256 для токенов пользователей. |
+| **`telegram.php`** / `docs/telegram.php` | **Telegram Bot API**. Отправка уведомлений о заказах с поддержкой Cloudflare Worker и SOCKS5/HTTP прокси для обхода таймаутов на хостингах в РФ. |
+| **`mail.php`** / `docs/mail.php` | **Почтовый сервис**. Отправка 6-значных кодов верификации через прямой сокетный SMTP (SSL/TLS) с fallback на PHP `mail()`. |
+| **`diag.php`** / `docs/diag.php` | **Панель диагностики**. Интерактивная веб-страница проверки БД, прав на файлы, отправки почты и пинга Telegram. |
+| **`test.php`** / `docs/test.php` | **Быстрый тест PHP**. Легковесная проверка окружения сервера. |
+| **`.htaccess`** / `docs/.htaccess` | **Маршрутизация Apache**. Перенаправление `/api/*` на `api.php` и SPA-маршрутов на `index.html`. |
+| **`schema.sql`** | **Структура БД**. Таблицы `users`, `orders`, `payments`, `support_requests`, `verification_codes`. |
+| **`src/`** | **Frontend (React 19 + TypeScript + Tailwind CSS)**. Исходный код интерфейса пользователя и панели администратора. |
+| **`docs/`** | **Директория публикации**. Скомпилированный статический бандл и PHP бэкенд, готовые к загрузке на хостинг. |
+| **`DEPLOYMENT.md`** | **Полная инструкция по развёртыванию**. Подробное руководство по настройке БД, SMTP, Telegram и Cloudflare Worker. |
 
 ---
 
-## 🚀 Развёртывание на VPS (Docker Compose)
+## 🛠 Быстрый запуск для разработки
 
-### 1. Клонирование репозитория и настройка `.env`
 ```bash
-git clone https://github.com/your-org/bausquad.git
-cd bausquad
-cp .env.example .env
-```
+# 1. Установка зависимостей
+npm install
 
-Отредактируйте файл `.env`:
-- Задайте ключ `SECRET_KEY`
-- Укажите настройки `MYSQL_ROOT_PASSWORD` и `MYSQL_PASSWORD`
-- Укажите `TELEGRAM_BOT_TOKEN` и `TELEGRAM_ADMIN_CHAT_ID`
-- Задайте параметры `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`
+# 2. Запуск локального сервера разработки
+npm run dev
 
-### 2. Запуск через Docker Compose
-```bash
-docker compose up -d --build
+# 3. Сборка для публикации (компилирует в docs/)
+npm run build
 ```
-
-### 3. Проверка статуса контейнеров
-```bash
-docker compose ps
-```
-После успешного запуска приложение доступно на порту `3000` (Frontend) и `8000` (Backend API).
 
 ---
 
-## 🔐 Роли и Безопасность
+## 📖 Инструкция по развёртыванию
 
-- **`customer`**: Создание заказов, загрузка файлов, просмотр личной истории заказов и профиля.
-- **`admin`**: Доступ к панели администратора `/admin`, изменение статусов заказов (Новый, В работе, Завершён, Отменён), управление пользователями, просмотр статистики и логов Telegram.
+Подробное пошаговое руководство с решением проблем таймаутов Telegram API доступно в файле [DEPLOYMENT.md](DEPLOYMENT.md).
 
----
-
-## 📡 REST API Эндпоинты
 
 | Метод | URL | Описание |
 | :--- | :--- | :--- |

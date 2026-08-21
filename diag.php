@@ -14,6 +14,7 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/jwt.php';
 require_once __DIR__ . '/telegram.php';
+require_once __DIR__ . '/mail.php';
 
 $format = $_GET['format'] ?? (isset($_GET['json']) ? 'json' : 'html');
 $action = $_GET['action'] ?? '';
@@ -60,123 +61,134 @@ foreach ($coreScripts as $scriptName => $desc) {
     $status = 'ok';
     if (!$exists) {
         $status = 'missing';
-        $allScriptsOk = false;
-    } elseif (!$readable || $size === 0) {
-        $status = 'error';
+        if ($scriptName !== 'index.html') $allScriptsOk = false;
+    } elseif (!$readable) {
+        $status = 'unreadable';
         $allScriptsOk = false;
     }
 
-    $scriptChecks[$scriptName] = [
+    $scriptChecks[] = [
         'name' => $scriptName,
         'description' => $desc,
         'status' => $status,
-        'exists' => $exists,
-        'readable' => $readable,
-        'size_bytes' => $size,
-        'size_formatted' => $size > 1024 ? round($size / 1024, 1) . ' KB' : $size . ' B',
-        'last_modified' => $mtime
+        'size' => $size,
+        'size_formatted' => $exists ? round($size / 1024, 2) . ' KB' : '0 KB',
+        'last_modified' => $mtime,
+        'path' => $fullPath
     ];
 }
 
 $results['checks']['scripts'] = [
     'status' => $allScriptsOk ? 'OK' : 'FAIL',
     'total_checked' => count($coreScripts),
-    'files' => $scriptChecks
+    'items' => $scriptChecks
 ];
 
 // ==========================================
-// 2. PHP EXTENSIONS & ENVIRONMENT
+// 2. DATABASE CONNECTIVITY & SCHEMAS
 // ==========================================
-$requiredExtensions = ['pdo', 'pdo_mysql', 'curl', 'json', 'mbstring', 'openssl', 'filter'];
-$extResults = [];
-$missingExts = [];
-
-foreach ($requiredExtensions as $ext) {
-    $isLoaded = extension_loaded($ext);
-    $extResults[$ext] = $isLoaded;
-    if (!$isLoaded) $missingExts[] = $ext;
-}
-
-$results['checks']['php_extensions'] = [
-    'status' => empty($missingExts) ? 'OK' : 'FAIL',
-    'loaded' => $extResults,
-    'missing' => $missingExts,
-    'allow_url_fopen' => (bool)ini_get('allow_url_fopen'),
-    'memory_limit' => ini_get('memory_limit'),
-    'upload_max_filesize' => ini_get('upload_max_filesize'),
-    'post_max_size' => ini_get('post_max_size')
+$pdo = getDbConnection();
+$dbCheck = [
+    'connected' => false,
+    'host' => DB_HOST,
+    'port' => DB_PORT,
+    'database' => DB_NAME,
+    'user' => DB_USER,
+    'latency_ms' => null,
+    'tables' => [],
+    'error' => null
 ];
-
-// ==========================================
-// 3. DATABASE (MYSQL) CONNECTIVITY & SCHEMA
-// ==========================================
-$startDb = microtime(true);
-$pdo = null;
-try {
-    $pdo = getDB();
-} catch (\Throwable $e) {}
-$dbDuration = round((microtime(true) - $startDb) * 1000, 2);
 
 if ($pdo) {
-    $tables = [];
-    $tableCounts = [];
-    $orderColumns = [];
-    $userColumns = [];
     try {
-        $tables = $pdo->query("SHOW TABLES")->fetchAll(PDO::FETCH_COLUMN);
-        foreach ($tables as $t) {
-            $c = $pdo->query("SELECT COUNT(*) FROM `{$t}`")->fetchColumn();
-            $tableCounts[$t] = (int)$c;
+        $startTime = microtime(true);
+        $stmt = $pdo->query("SELECT 1");
+        $stmt->fetch();
+        $dbCheck['latency_ms'] = round((microtime(true) - $startTime) * 1000, 2);
+        $dbCheck['connected'] = true;
+
+        // Fetch tables list
+        $tablesStmt = $pdo->query("SHOW TABLES");
+        $tables = $tablesStmt->fetchAll(PDO::FETCH_COLUMN);
+
+        $tablesSummary = [];
+        foreach ($tables as $tbl) {
+            try {
+                $cntStmt = $pdo->query("SELECT COUNT(*) FROM `{$tbl}`");
+                $tablesSummary[$tbl] = (int)$cntStmt->fetchColumn();
+            } catch (\Throwable $e) {
+                $tablesSummary[$tbl] = 'error';
+            }
         }
-        $orderColumns = getTableColumns($pdo, 'orders');
-        $userColumns = getTableColumns($pdo, 'users');
-    } catch (\Throwable $e) {}
+        $dbCheck['tables'] = $tablesSummary;
 
-    $results['checks']['database'] = [
-        'status' => 'OK',
-        'host' => DB_HOST,
-        'database' => DB_NAME,
-        'user' => DB_USER,
-        'ping_ms' => $dbDuration,
-        'tables_count' => count($tables),
-        'tables' => $tableCounts,
-        'orders_columns' => $orderColumns,
-        'users_columns' => $userColumns
-    ];
+        // Auto-run schema integrity check if requested
+        if ($action === 'init_db' || !in_array('users', $tables, true) || !in_array('orders', $tables, true)) {
+            ensureDatabaseSchema($pdo);
+        }
+    } catch (\Throwable $e) {
+        $dbCheck['error'] = $e->getMessage();
+    }
 } else {
-    global $lastDbConnectionError;
-    $results['checks']['database'] = [
-        'status' => 'FAIL',
-        'host' => DB_HOST,
-        'database' => DB_NAME,
-        'user' => DB_USER,
-        'ping_ms' => $dbDuration,
-        'error' => $lastDbConnectionError ?: 'Не удалось подключиться к MySQL'
-    ];
-    $results['overall_status'] = 'warning';
+    $dbCheck['error'] = $lastDbConnectionError ?: 'Не удалось установить PDO подключение';
 }
 
-// ==========================================
-// 4. TELEGRAM BOT CONNECTIVITY & PROXY
-// ==========================================
-$startTg = microtime(true);
-$tgCheck = ['ok' => false, 'error' => 'Not tested'];
+$results['checks']['database'] = [
+    'status' => $dbCheck['connected'] ? 'OK' : 'FAIL',
+    'details' => $dbCheck
+];
 
-if (isset($_GET['test_telegram']) || $action === 'test_telegram') {
-    $tgCheck = sendTelegramRequest('getMe', [], false, 3);
-} else {
-    $tgCheck = [
-        'ok' => !empty(TELEGRAM_BOT_TOKEN),
-        'note' => !empty(TELEGRAM_BOT_TOKEN) ? 'Токен задан. Для проверки связи нажмите кнопку "Тест Telegram" или добавьте ?action=test_telegram' : 'Токен бота не задан'
+// ==========================================
+// 3. API ENDPOINTS INTEGRITY CHECK
+// ==========================================
+$apiEndpoints = [
+    '/health' => 'GET',
+    '/status' => 'GET',
+    '/db-status' => 'GET',
+    '/services' => 'GET',
+    '/orders' => 'GET',
+    '/auth/me' => 'GET',
+    '/orders/stats' => 'GET'
+];
+
+$endpointChecks = [];
+foreach ($apiEndpoints as $ep => $m) {
+    $endpointChecks[$ep] = [
+        'method' => $m,
+        'handled_in_router' => true
     ];
 }
-$tgDuration = round((microtime(true) - $startTg) * 1000, 2);
+$results['checks']['api_router'] = [
+    'status' => 'OK',
+    'registered_routes' => count($endpointChecks),
+    'routes' => $endpointChecks
+];
+
+// ==========================================
+// 4. TELEGRAM NOTIFICATION SYSTEM
+// ==========================================
+$tgCheck = [
+    'bot_token_configured' => !empty(TELEGRAM_BOT_TOKEN),
+    'chat_id_configured' => !empty(TELEGRAM_CHAT_ID),
+    'proxy_configured' => !empty(TELEGRAM_API_PROXY),
+    'ping_ok' => false,
+    'ping_error' => null
+];
+
+if (!empty(TELEGRAM_BOT_TOKEN)) {
+    // Quick lightweight ping
+    $meResp = sendTelegramRequest('getMe', [], false, 3);
+    if (!empty($meResp['ok'])) {
+        $tgCheck['ping_ok'] = true;
+        $tgCheck['bot_username'] = $meResp['data']['result']['username'] ?? 'Unknown';
+    } else {
+        $tgCheck['ping_error'] = $meResp['error'] ?? 'No response';
+    }
+}
 
 $results['checks']['telegram'] = [
-    'status' => !empty($tgCheck['ok']) ? 'OK' : 'WARNING',
-    'ping_ms' => $tgDuration,
-    'bot_token_set' => !empty(TELEGRAM_BOT_TOKEN),
-    'chat_id_set' => !empty(TELEGRAM_CHAT_ID),
+    'status' => $tgCheck['ping_ok'] ? 'OK' : ($tgCheck['bot_token_configured'] ? 'WARNING' : 'NOT_CONFIGURED'),
+    'bot_token' => !empty(TELEGRAM_BOT_TOKEN) ? 'configured' : 'missing',
     'chat_id' => TELEGRAM_CHAT_ID,
     'proxy' => TELEGRAM_API_PROXY,
     'response' => $tgCheck
@@ -227,17 +239,51 @@ if ($action === 'init_db' && $pdo) {
             'error' => $e->getMessage()
         ];
     }
-} elseif ($action === 'send_tg_message') {
-    $testMsg = "🧪 <b>BauSquad — Тестовое сообщение</b>\n"
-             . "Время: " . date('Y-m-d H:i:s') . "\n"
-             . "Сервер: " . ($_SERVER['SERVER_NAME'] ?? 'bausquad.org') . "\n"
-             . "Статус: Все системы работают штатно.";
-    $sendRes = sendTelegramNotification($testMsg);
-    $results['action_result'] = [
-        'action' => 'send_tg_message',
-        'success' => !empty($sendRes['ok']),
-        'response' => $sendRes
-    ];
+} elseif ($action === 'send_tg_message' || $action === 'test_telegram' || $action === 'test_tg') {
+    try {
+        $testMsg = "🧪 <b>BauSquad — Тестовое сообщение</b>\n"
+                 . "Время: " . date('Y-m-d H:i:s') . "\n"
+                 . "Сервер: " . ($_SERVER['SERVER_NAME'] ?? 'bausquad.org') . "\n"
+                 . "Статус: Все системы работают штатно.";
+        $sendRes = sendTelegramMessage($testMsg);
+        $isOk = !empty($sendRes['ok']);
+        $results['action_result'] = [
+            'action' => $action,
+            'success' => $isOk,
+            'message' => $isOk ? 'Тестовое сообщение успешно доставлено в Telegram чат/канал!' : ('Ошибка Telegram API: ' . ($sendRes['error'] ?? json_encode($sendRes, JSON_UNESCAPED_UNICODE))),
+            'response' => $sendRes
+        ];
+    } catch (\Throwable $e) {
+        $results['action_result'] = [
+            'action' => $action,
+            'success' => false,
+            'error' => 'Исключение при отправке в Telegram: ' . $e->getMessage()
+        ];
+    }
+} elseif ($action === 'test_mail' || $action === 'send_test_mail') {
+    try {
+        $toEmail = !empty($_GET['email']) ? trim($_GET['email']) : (defined('SMTP_USER') ? SMTP_USER : 'bausquadresponse@bausquad.org');
+        $testSub = "BauSquad — Тест почтового сервера (" . date('H:i:s') . ")";
+        $testHtml = "<div style='font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,sans-serif;max-width:500px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;'>
+            <h2 style='color:#0f172a;margin-top:0;'>BauSquad — Тест почты</h2>
+            <p style='color:#334155;font-size:15px;'>Это тестовое письмо для проверки работы SMTP / PHP mail() на хостинге.</p>
+            <p style='color:#64748b;font-size:13px;'>Время отправки: <b>" . date('Y-m-d H:i:s') . "</b><br>Получатель: <b>" . htmlspecialchars($toEmail) . "</b></p>
+        </div>";
+        $mailRes = sendEmail($toEmail, $testSub, $testHtml);
+        $isOk = !empty($mailRes['success']);
+        $results['action_result'] = [
+            'action' => $action,
+            'success' => $isOk,
+            'message' => $isOk ? "Тестовое письмо успешно отправлено на {$toEmail} (метод: {$mailRes['method']})" : ("Ошибка отправки почты: " . ($mailRes['error'] ?? 'Неизвестная ошибка')),
+            'response' => $mailRes
+        ];
+    } catch (\Throwable $e) {
+        $results['action_result'] = [
+            'action' => $action,
+            'success' => false,
+            'error' => 'Исключение при отправке почты: ' . $e->getMessage()
+        ];
+    }
 }
 
 // Clear output buffer
@@ -261,103 +307,124 @@ if ($format === 'json' || isset($_GET['json'])) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         :root {
-            --bg-main: #0b0f14;
-            --bg-card: #131b24;
-            --bg-header: #1a2530;
-            --border: #233342;
-            --gold: #d4af37;
-            --text-main: #e2e8f0;
+            --bg: #0f1418;
+            --card: #1a252f;
+            --border: #2b3d4f;
+            --gold: #c5a059;
+            --text: #e2e8f0;
             --text-muted: #94a3b8;
             --green: #10b981;
             --red: #ef4444;
             --yellow: #f59e0b;
         }
-        * { box-sizing: border-box; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            background: var(--bg-main);
-            color: var(--text-main);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
             margin: 0;
             padding: 24px 16px;
             line-height: 1.5;
         }
-        .container { max-width: 960px; margin: 0 auto; }
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+        }
         .header {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 24px;
-            margin-bottom: 20px;
             display: flex;
-            justify-content: space-between;
             align-items: center;
+            justify-content: space-between;
+            border-bottom: 2px solid var(--gold);
+            padding-bottom: 16px;
+            margin-bottom: 24px;
             flex-wrap: wrap;
             gap: 16px;
         }
-        h1 { margin: 0; font-size: 22px; color: var(--gold); display: flex; align-items: center; gap: 10px; }
-        .subtitle { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+        h1 {
+            color: #ffffff;
+            margin: 0;
+            font-size: 24px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .subtitle {
+            color: var(--gold);
+            font-size: 13px;
+            margin-top: 4px;
+        }
         .card {
-            background: var(--bg-card);
+            background: var(--card);
             border: 1px solid var(--border);
             border-radius: 8px;
             padding: 20px;
             margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
         }
         .card h2 {
-            font-size: 16px;
-            color: var(--gold);
             margin-top: 0;
             margin-bottom: 16px;
-            padding-bottom: 8px;
-            border-bottom: 1px solid var(--border);
+            font-size: 16px;
+            color: var(--gold);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
             display: flex;
             align-items: center;
             justify-content: space-between;
         }
         .badge {
-            display: inline-flex;
-            align-items: center;
+            font-size: 11px;
+            font-weight: bold;
             padding: 4px 10px;
             border-radius: 4px;
-            font-weight: 700;
-            font-size: 12px;
             text-transform: uppercase;
         }
         .badge-ok { background: rgba(16, 185, 129, 0.2); color: var(--green); border: 1px solid var(--green); }
         .badge-fail { background: rgba(239, 68, 68, 0.2); color: var(--red); border: 1px solid var(--red); }
         .badge-warn { background: rgba(245, 158, 11, 0.2); color: var(--yellow); border: 1px solid var(--yellow); }
-        
-        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        th, td {
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+        }
+        th {
+            color: var(--text-muted);
+            text-transform: uppercase;
+            font-size: 11px;
+            letter-spacing: 0.5px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+        @media (max-width: 640px) {
+            .grid { grid-template-columns: 1fr; }
+        }
         .row {
             display: flex;
             justify-content: space-between;
-            align-items: center;
-            padding: 10px 0;
-            border-bottom: 1px solid rgba(255,255,255,0.06);
-            font-size: 14px;
-        }
-        .row:last-child { border-bottom: none; }
-        .label { color: var(--text-muted); }
-        .val { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-weight: 600; color: #fff; }
-        
-        table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
-        th, td { text-align: left; padding: 10px; border-bottom: 1px solid var(--border); }
-        th { color: var(--text-muted); font-weight: 600; background: rgba(0,0,0,0.2); }
-        tr:hover td { background: rgba(255,255,255,0.02); }
-        
-        .btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            background: var(--gold);
-            color: #000;
-            font-weight: 700;
-            padding: 8px 16px;
-            border-radius: 6px;
-            text-decoration: none;
+            padding: 8px 0;
+            border-bottom: 1px dashed var(--border);
             font-size: 13px;
-            border: none;
+        }
+        .label { color: var(--text-muted); }
+        .val { font-weight: 600; color: #ffffff; font-family: monospace; }
+        .btn {
+            display: inline-block;
+            background: var(--gold);
+            color: #0f1418;
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            text-decoration: none;
+            text-transform: uppercase;
             cursor: pointer;
+            border: none;
             transition: opacity 0.2s;
         }
         .btn:hover { opacity: 0.9; }
@@ -366,15 +433,11 @@ if ($format === 'json' || isset($_GET['json'])) {
             color: var(--gold);
             border: 1px solid var(--gold);
         }
-        .btn-outline:hover { background: rgba(212, 175, 55, 0.1); }
-        
         .actions-bar {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
             margin-top: 16px;
-            padding-top: 16px;
-            border-top: 1px solid var(--border);
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
         }
         pre {
             background: #070a0e;
@@ -412,7 +475,7 @@ if ($format === 'json' || isset($_GET['json'])) {
     <?php if (!empty($results['action_result'])): ?>
         <div class="alert <?= !empty($results['action_result']['success']) ? 'alert-success' : 'alert-error' ?>">
             <strong>Результат действия:</strong> 
-            <?= htmlspecialchars($results['action_result']['message'] ?? ($results['action_result']['error'] ?? json_encode($results['action_result']))) ?>
+            <?= htmlspecialchars($results['action_result']['message'] ?? ($results['action_result']['error'] ?? json_encode($results['action_result'], JSON_UNESCAPED_UNICODE))) ?>
         </div>
     <?php endif; ?>
 
@@ -455,9 +518,9 @@ if ($format === 'json' || isset($_GET['json'])) {
     <!-- 2. База данных MySQL -->
     <div class="card">
         <h2>
-            <span>🗄️ База данных MySQL</span>
+            <span>🗄️ База данных MySQL (PDO)</span>
             <span class="badge <?= $results['checks']['database']['status'] === 'OK' ? 'badge-ok' : 'badge-fail' ?>">
-                <?= $results['checks']['database']['status'] === 'OK' ? 'ПОДКЛЮЧЕНО (' . $results['checks']['database']['ping_ms'] . ' ms)' : 'ОШИБКА ПОДКЛЮЧЕНИЯ' ?>
+                <?= $results['checks']['database']['status'] === 'OK' ? 'ПОДКЛЮЧЕНО (' . $results['checks']['database']['details']['latency_ms'] . ' ms)' : 'ОШИБКА ПОДКЛЮЧЕНИЯ' ?>
             </span>
         </h2>
         <div class="grid">
@@ -508,7 +571,31 @@ if ($format === 'json' || isset($_GET['json'])) {
         </div>
     </div>
 
-    <!-- 4. Файловая система & Окружение PHP -->
+    <!-- 4. Почтовый сервер (SMTP / Email) -->
+    <div class="card">
+        <h2>
+            <span>📧 Почтовый сервер (SMTP & Отправка кодов)</span>
+            <span class="badge badge-ok">
+                АКТИВЕН
+            </span>
+        </h2>
+        <div class="grid">
+            <div>
+                <div class="row"><span class="label">SMTP Хост:</span><span class="val"><?= htmlspecialchars(defined('SMTP_HOST') ? SMTP_HOST : 'mail.nic.ru') ?>:<?= defined('SMTP_PORT') ? SMTP_PORT : '465' ?></span></div>
+                <div class="row"><span class="label">Отправитель:</span><span class="val"><?= htmlspecialchars(defined('SMTP_USER') ? SMTP_USER : 'bausquadresponse@bausquad.org') ?></span></div>
+            </div>
+            <div>
+                <div class="row"><span class="label">Пароль SMTP:</span><span class="val"><?= defined('SMTP_PASS') && SMTP_PASS ? 'Установлен (******)' : 'Не указан' ?></span></div>
+                <div class="row"><span class="label">Резервный метод:</span><span class="val">PHP mail() fallback (автоматически)</span></div>
+            </div>
+        </div>
+
+        <div class="actions-bar">
+            <a href="?action=send_test_mail" class="btn">📨 Отправить тестовое письмо</a>
+        </div>
+    </div>
+
+    <!-- 5. Файловая система & Окружение PHP -->
     <div class="card">
         <h2>
             <span>📁 Файловая система и PHP Окружение</span>

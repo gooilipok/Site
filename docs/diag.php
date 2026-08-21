@@ -14,6 +14,7 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/jwt.php';
 require_once __DIR__ . '/telegram.php';
+require_once __DIR__ . '/mail.php';
 
 $format = $_GET['format'] ?? (isset($_GET['json']) ? 'json' : 'html');
 $action = $_GET['action'] ?? '';
@@ -227,17 +228,51 @@ if ($action === 'init_db' && $pdo) {
             'error' => $e->getMessage()
         ];
     }
-} elseif ($action === 'send_tg_message') {
-    $testMsg = "🧪 <b>BauSquad — Тестовое сообщение</b>\n"
-             . "Время: " . date('Y-m-d H:i:s') . "\n"
-             . "Сервер: " . ($_SERVER['SERVER_NAME'] ?? 'bausquad.org') . "\n"
-             . "Статус: Все системы работают штатно.";
-    $sendRes = sendTelegramNotification($testMsg);
-    $results['action_result'] = [
-        'action' => 'send_tg_message',
-        'success' => !empty($sendRes['ok']),
-        'response' => $sendRes
-    ];
+} elseif ($action === 'send_tg_message' || $action === 'test_telegram' || $action === 'test_tg') {
+    try {
+        $testMsg = "🧪 <b>BauSquad — Тестовое сообщение</b>\n"
+                 . "Время: " . date('Y-m-d H:i:s') . "\n"
+                 . "Сервер: " . ($_SERVER['SERVER_NAME'] ?? 'bausquad.org') . "\n"
+                 . "Статус: Все системы работают штатно.";
+        $sendRes = sendTelegramMessage($testMsg);
+        $isOk = !empty($sendRes['ok']);
+        $results['action_result'] = [
+            'action' => $action,
+            'success' => $isOk,
+            'message' => $isOk ? 'Тестовое сообщение успешно доставлено в Telegram чат/канал!' : ('Ошибка Telegram API: ' . ($sendRes['error'] ?? json_encode($sendRes, JSON_UNESCAPED_UNICODE))),
+            'response' => $sendRes
+        ];
+    } catch (\Throwable $e) {
+        $results['action_result'] = [
+            'action' => $action,
+            'success' => false,
+            'error' => 'Исключение при отправке в Telegram: ' . $e->getMessage()
+        ];
+    }
+} elseif ($action === 'test_mail' || $action === 'send_test_mail') {
+    try {
+        $toEmail = !empty($_GET['email']) ? trim($_GET['email']) : (defined('SMTP_USER') ? SMTP_USER : 'bausquadresponse@bausquad.org');
+        $testSub = "BauSquad — Тест почтового сервера (" . date('H:i:s') . ")";
+        $testHtml = "<div style='font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,sans-serif;max-width:500px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;'>
+            <h2 style='color:#0f172a;margin-top:0;'>BauSquad — Тест почты</h2>
+            <p style='color:#334155;font-size:15px;'>Это тестовое письмо для проверки работы SMTP / PHP mail() на хостинге.</p>
+            <p style='color:#64748b;font-size:13px;'>Время отправки: <b>" . date('Y-m-d H:i:s') . "</b><br>Получатель: <b>" . htmlspecialchars($toEmail) . "</b></p>
+        </div>";
+        $mailRes = sendEmail($toEmail, $testSub, $testHtml);
+        $isOk = !empty($mailRes['success']);
+        $results['action_result'] = [
+            'action' => $action,
+            'success' => $isOk,
+            'message' => $isOk ? "Тестовое письмо успешно отправлено на {$toEmail} (метод: {$mailRes['method']})" : ("Ошибка отправки почты: " . ($mailRes['error'] ?? 'Неизвестная ошибка')),
+            'response' => $mailRes
+        ];
+    } catch (\Throwable $e) {
+        $results['action_result'] = [
+            'action' => $action,
+            'success' => false,
+            'error' => 'Исключение при отправке почты: ' . $e->getMessage()
+        ];
+    }
 }
 
 // Clear output buffer
@@ -505,6 +540,30 @@ if ($format === 'json' || isset($_GET['json'])) {
         <div class="actions-bar">
             <a href="?action=test_telegram" class="btn btn-outline">🔍 Пинг Telegram (getMe)</a>
             <a href="?action=send_tg_message" class="btn">✉️ Отправить тестовое сообщение в Telegram</a>
+        </div>
+    </div>
+
+    <!-- 4. Почтовый сервер (SMTP / Email) -->
+    <div class="card">
+        <h2>
+            <span>📧 Почтовый сервер (SMTP & Отправка кодов)</span>
+            <span class="badge badge-ok">
+                АКТИВЕН
+            </span>
+        </h2>
+        <div class="grid">
+            <div>
+                <div class="row"><span class="label">SMTP Хост:</span><span class="val"><?= htmlspecialchars(defined('SMTP_HOST') ? SMTP_HOST : 'mail.nic.ru') ?>:<?= defined('SMTP_PORT') ? SMTP_PORT : '465' ?></span></div>
+                <div class="row"><span class="label">Отправитель:</span><span class="val"><?= htmlspecialchars(defined('SMTP_USER') ? SMTP_USER : 'bausquadresponse@bausquad.org') ?></span></div>
+            </div>
+            <div>
+                <div class="row"><span class="label">Пароль SMTP:</span><span class="val"><?= defined('SMTP_PASS') && SMTP_PASS ? 'Установлен (******)' : 'Не указан' ?></span></div>
+                <div class="row"><span class="label">Резервный метод:</span><span class="val">PHP mail() fallback (автоматически)</span></div>
+            </div>
+        </div>
+
+        <div class="actions-bar">
+            <a href="?action=send_test_mail" class="btn">📨 Отправить тестовое письмо</a>
         </div>
     </div>
 

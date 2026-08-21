@@ -145,6 +145,13 @@ function sendTelegramMessage($text, $chatId = null): array {
 }
 
 /**
+ * Алиас для обратной совместимости с диагностикой и скриптами
+ */
+function sendTelegramNotification($text, $chatId = null): array {
+    return sendTelegramMessage($text, $chatId);
+}
+
+/**
  * Отправка заказа с фото и документами
  */
 function sendTelegramOrder(array $orderData, array $files = []): array {

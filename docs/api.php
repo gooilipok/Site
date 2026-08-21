@@ -395,16 +395,20 @@ try {
             } catch (\Throwable $e) {}
         }
 
-        // Send welcome email
-        $mailSubject = "Добро пожаловать в BauSquad!";
-        $mailHtml = "<div style='font-family:sans-serif;max-width:540px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px;background:#ffffff;'>
-            <h2 style='color:#0f172a;margin-top:0;'>Добро пожаловать в BauSquad!</h2>
-            <p style='color:#475569;font-size:15px;'>Вы успешно зарегистрировались на платформе помощи в проектировании и чертежах <b>BauSquad</b>.</p>
-            <p style='color:#475569;font-size:14px;'>Логин: <b>" . htmlspecialchars($username) . "</b><br>Email: <b>" . htmlspecialchars($email) . "</b></p>
-            <p style='color:#94a3b8;font-size:13px;'>Если у вас возникнут вопросы, обращайтесь в поддержку: support@bausquad.org</p>
+        // Send welcome & verification email
+        $mailSubject = "Код подтверждения и регистрация в BauSquad: {$code}";
+        $mailHtml = "<div style='font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif; max-width: 520px; margin: 0 auto; padding: 28px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;'>
+            <h2 style='color: #0f172a; margin: 0 0 8px 0; font-size: 22px;'>Добро пожаловать в BauSquad!</h2>
+            <p style='color: #334155; font-size: 15px; line-height: 1.5;'>Здравствуйте, <b>" . htmlspecialchars($username) . "</b>! Вы успешно зарегистрировались на платформе помощи в проектировании и чертежах <b>BauSquad</b>.</p>
+            <p style='color: #334155; font-size: 14px;'>Ваш логин: <b>" . htmlspecialchars($username) . "</b><br>Ваш Email: <b>" . htmlspecialchars($email) . "</b></p>
+            <div style='background: #f1f5f9; border: 2px dashed #94a3b8; border-radius: 8px; padding: 18px; text-align: center; margin: 20px 0;'>
+                <div style='color: #64748b; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px;'>Ваш проверочный код:</div>
+                <span style='font-size: 32px; font-weight: 700; letter-spacing: 8px; color: #1e293b; font-family: monospace;'>" . $code . "</span>
+            </div>
+            <p style='color: #94a3b8; font-size: 12px; margin-top: 16px; border-top: 1px solid #f1f5f9; padding-top: 12px;'>Служба поддержки: support@bausquad.org &bull; bausquad.org</p>
         </div>";
 
-        sendEmail($email, $mailSubject, $mailHtml);
+        $mailResult = sendEmail($email, $mailSubject, $mailHtml);
 
         $accessToken = generateJWT($userId, 'customer', 'access');
         $refreshToken = generateJWT($userId, 'customer', 'refresh');
@@ -439,8 +443,59 @@ try {
                 'token_type' => 'Bearer',
                 'expires_in' => JWT_ACCESS_EXPIRY
             ],
+            'mail_status' => $mailResult,
             'debug_code' => (APP_ENV !== 'production') ? $code : null
         ], 201);
+    }
+
+    // Auth: Send verification code to email
+    if (($path === '/auth/send-code' || $path === '/auth/code' || $path === '/auth/request-code' || $path === '/send-code') && $method === 'POST') {
+        $email = strtolower(trim($input['email'] ?? ''));
+        $username = trim($input['username'] ?? explode('@', $email)[0]);
+
+        if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            jsonResponse(['error' => 'Укажите корректный адрес электронной почты'], 400);
+        }
+
+        $code = (string)random_int(100000, 999999);
+        $expiresAt = date('Y-m-d H:i:s', time() + 900);
+
+        if ($pdo) {
+            try {
+                $stmt = $pdo->prepare("INSERT INTO verification_codes (email, code, expires_at, created_at) VALUES (?, ?, ?, NOW())");
+                $stmt->execute([$email, $code, $expiresAt]);
+            } catch (\Throwable $e) {}
+        }
+
+        $mailSubject = "Код подтверждения регистрации BauSquad: {$code}";
+        $mailHtml = "<div style='font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif; max-width: 520px; margin: 0 auto; padding: 28px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;'>
+            <div style='text-align: center; margin-bottom: 20px;'>
+                <h2 style='color: #0f172a; margin: 0 0 6px 0; font-size: 22px;'>Подтверждение регистрации</h2>
+                <p style='color: #64748b; margin: 0; font-size: 14px;'>Сервис помощи студентам BauSquad</p>
+            </div>
+            <p style='color: #334155; font-size: 15px; line-height: 1.5;'>
+                Здравствуйте, <b>" . htmlspecialchars($username) . "</b>! Для завершения регистрации введите код подтверждения:
+            </p>
+            <div style='background: #f1f5f9; border: 2px dashed #94a3b8; border-radius: 8px; padding: 18px; text-align: center; margin: 20px 0;'>
+                <span style='font-size: 32px; font-weight: 700; letter-spacing: 8px; color: #1e293b; font-family: monospace;'>" . $code . "</span>
+            </div>
+            <p style='color: #64748b; font-size: 13px; line-height: 1.4;'>
+                ⏱ Код действителен в течение 15 минут.<br>
+                Если вы не регистрировались на сайте bausquad.org, просто проигнорируйте это письмо.
+            </p>
+            <p style='color: #94a3b8; font-size: 12px; margin-top: 16px; border-top: 1px solid #f1f5f9; padding-top: 12px; text-align: center;'>
+                Служба поддержки BauSquad &bull; bausquad.org
+            </p>
+        </div>";
+
+        $mailResult = sendEmail($email, $mailSubject, $mailHtml);
+
+        jsonResponse([
+            'message' => 'Код подтверждения успешно отправлен на вашу почту',
+            'email' => $email,
+            'mail_status' => $mailResult,
+            'debug_code' => (APP_ENV !== 'production') ? $code : null
+        ], 200);
     }
 
     // Register Step 2: Verify code and create user

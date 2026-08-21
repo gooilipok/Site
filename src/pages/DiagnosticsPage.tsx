@@ -161,7 +161,7 @@ export function DiagnosticsPage() {
     }
   };
 
-  const handleAction = async (action: 'init_db' | 'test_telegram') => {
+  const handleAction = async (action: 'init_db' | 'test_telegram' | 'test_mail') => {
     setActionLoading(action);
     setActionMsg(null);
     try {
@@ -172,7 +172,7 @@ export function DiagnosticsPage() {
         if (data.action_result?.success) {
           setActionMsg({ type: 'success', text: data.action_result.message || 'Действие выполнено успешно!' });
         } else {
-          setActionMsg({ type: 'error', text: data.action_result?.error || 'Ошибка при выполнении действия' });
+          setActionMsg({ type: 'error', text: data.action_result?.error || data.action_result?.message || 'Ошибка при выполнении действия' });
         }
       } else {
         setActionMsg({ type: 'error', text: `Ошибка HTTP ${res.status}` });
@@ -414,14 +414,22 @@ export function DiagnosticsPage() {
             </div>
           </div>
 
-          <div className="mt-4 pt-4 border-t border-white/5">
+          <div className="mt-4 pt-4 border-t border-white/5 flex flex-col sm:flex-row gap-2">
             <button
               onClick={() => handleAction('test_telegram')}
               disabled={actionLoading === 'test_telegram'}
-              className="w-full px-3 py-1.5 rounded-lg bg-[#222c35] hover:bg-[#2c3844] text-xs font-medium text-gray-200 border border-white/10 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
+              className="flex-1 px-3 py-1.5 rounded-lg bg-[#222c35] hover:bg-[#2c3844] text-xs font-medium text-gray-200 border border-white/10 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
             >
               <Send className="w-3.5 h-3.5 text-[#c5a059]" />
-              {actionLoading === 'test_telegram' ? 'Отправка...' : 'Отправить тестовое уведомление'}
+              {actionLoading === 'test_telegram' ? 'Отправка...' : 'Тест Telegram'}
+            </button>
+            <button
+              onClick={() => handleAction('test_mail')}
+              disabled={actionLoading === 'test_mail'}
+              className="flex-1 px-3 py-1.5 rounded-lg bg-[#222c35] hover:bg-[#2c3844] text-xs font-medium text-gray-200 border border-white/10 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
+            >
+              <Zap className="w-3.5 h-3.5 text-[#c5a059]" />
+              {actionLoading === 'test_mail' ? 'Отправка...' : 'Тест Email (SMTP)'}
             </button>
           </div>
         </div>

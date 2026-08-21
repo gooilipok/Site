@@ -242,31 +242,46 @@ if ($action === 'init_db' && $pdo) {
 } elseif ($action === 'send_tg_message' || $action === 'test_telegram' || $action === 'test_tg') {
     try {
         $customProxy = !empty($_GET['custom_proxy']) ? trim($_GET['custom_proxy']) : null;
-        if ($action === 'test_telegram' || $action === 'test_tg') {
-            $sendRes = sendTelegramRequest('getMe', [], false, 5, $customProxy);
-            $isOk = !empty($sendRes['ok']);
+        $chatId = !empty($_GET['chat_id']) ? trim($_GET['chat_id']) : (defined('TELEGRAM_CHAT_ID') ? TELEGRAM_CHAT_ID : '');
+
+        // 1. Check getMe first
+        $meRes = sendTelegramRequest('getMe', [], false, 5, $customProxy);
+        $botUsername = $meRes['data']['result']['username'] ?? 'BauSquadBot';
+
+        if (empty($meRes['ok'])) {
             $results['action_result'] = [
                 'action' => $action,
-                'success' => $isOk,
-                'message' => $isOk ? ('Соединение с Telegram успешно! Бот: @' . ($sendRes['data']['result']['username'] ?? 'Unknown')) : ('Ошибка Telegram API: ' . ($sendRes['error'] ?? 'No response')),
+                'success' => false,
+                'message' => 'Не удалось подключиться к Telegram API: ' . ($meRes['error'] ?? 'Нет ответа от сервера Telegram'),
                 'proxy_tested' => $customProxy ?: (defined('TELEGRAM_API_PROXY') ? TELEGRAM_API_PROXY : 'None'),
-                'response' => $sendRes
+                'response' => $meRes
             ];
         } else {
-            $testMsg = "🧪 <b>BauSquad — Тестовое сообщение</b>\n"
-                     . "Время: " . date('Y-m-d H:i:s') . "\n"
-                     . "Сервер: " . ($_SERVER['SERVER_NAME'] ?? 'bausquad.org') . "\n"
-                     . "Статус: Все системы работают штатно.";
+            // 2. Send actual test message
+            $testMsg = "🧪 <b>BauSquad — Тестовое сообщение</b>\n\n"
+                     . "✅ Бот <b>@{$botUsername}</b> успешно подключен к сайту bausquad.org!\n"
+                     . "⏰ Время сервера: " . date('Y-m-d H:i:s') . "\n"
+                     . "🌐 Сервер: " . ($_SERVER['SERVER_NAME'] ?? 'bausquad.org') . "\n"
+                     . "💬 Чат ID: <code>{$chatId}</code>\n"
+                     . "🚀 Статус: Все сервисы работают штатно.";
+
             $sendRes = sendTelegramRequest('sendMessage', [
-                'chat_id' => defined('TELEGRAM_CHAT_ID') ? TELEGRAM_CHAT_ID : '',
+                'chat_id' => $chatId,
                 'text' => $testMsg,
                 'parse_mode' => 'HTML'
             ], false, 5, $customProxy);
+
             $isOk = !empty($sendRes['ok']);
+            $msgText = $isOk 
+                ? "Тестовое сообщение успешно доставлено в Telegram (бот: @{$botUsername}, чат: {$chatId})!" 
+                : "Бот @{$botUsername} доступен, но отправка сообщения в чат {$chatId} не удалась: " . ($sendRes['error'] ?? 'Проверьте Chat ID и добавьте бота в чат');
+
             $results['action_result'] = [
                 'action' => $action,
                 'success' => $isOk,
-                'message' => $isOk ? 'Тестовое сообщение успешно доставлено в Telegram чат/канал!' : ('Ошибка Telegram API: ' . ($sendRes['error'] ?? json_encode($sendRes, JSON_UNESCAPED_UNICODE))),
+                'message' => $msgText,
+                'bot_username' => $botUsername,
+                'chat_id' => $chatId,
                 'proxy_tested' => $customProxy ?: (defined('TELEGRAM_API_PROXY') ? TELEGRAM_API_PROXY : 'None'),
                 'response' => $sendRes
             ];

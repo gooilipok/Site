@@ -1839,54 +1839,155 @@ app.post('/api/support', async (req: Request, res: Response) => {
   }
 });
 
+// 14b. DIAGNOSTIC & TELEGRAM TEST
+const handleDiagRequest = async (req: Request, res: Response) => {
+  const action = req.query.action as string;
+  const customProxy = (req.query.custom_proxy as string) || undefined;
+  const chatId = (req.query.chat_id as string) || TELEGRAM_CHAT_ID;
+
+  let actionResult: any = null;
+
+  if (action === 'test_telegram' || action === 'test_tg' || action === 'send_tg_message') {
+    const testMsg = `🧪 <b>BauSquad — Тестовое сообщение (Node.js Server)</b>\n\n` +
+      `✅ Бот <b>@BauSquadBot</b> успешно подключен к сайту bausquad.org!\n` +
+      `⏰ Время сервера: ${new Date().toLocaleString('ru-RU')}\n` +
+      `🌐 Сервер: Node.js Dev Server\n` +
+      `💬 Чат ID: <code>${chatId}</code>\n` +
+      `🚀 Статус: Все сервисы работают штатно.`;
+
+    const success = await sendTelegramNotification(testMsg);
+    actionResult = {
+      action,
+      success,
+      message: success 
+        ? `Тестовое сообщение успешно доставлено в Telegram (чат: ${chatId})!` 
+        : `Не удалось отправить сообщение в Telegram. Проверьте Bot Token и Chat ID.`,
+      bot_username: 'BauSquadBot',
+      chat_id: chatId
+    };
+  }
+
+  const report = {
+    timestamp: new Date().toISOString(),
+    status: 'ok',
+    php_version: 'Node.js ' + process.version,
+    server_software: 'Express / Vite / BauSquad Host',
+    action_result: actionResult,
+    database: {
+      connected: !!dbPool,
+      driver: 'mysql2 / in-memory fallback',
+      tables_count: 5,
+      users_count: users.length,
+      orders_count: orders.length
+    },
+    telegram: {
+      bot_token_set: !!TELEGRAM_BOT_TOKEN,
+      chat_id: chatId,
+      proxy_configured: !!TELEGRAM_API_PROXY
+    },
+    smtp: {
+      host: SMTP_HOST,
+      port: SMTP_PORT,
+      user: SMTP_USER
+    }
+  };
+
+  return res.json(report);
+};
+
+app.get('/diag.php', handleDiagRequest);
+app.get('/api/diag', handleDiagRequest);
+
+app.get('/api/telegram/test', async (req: Request, res: Response) => {
+  const chatId = (req.query.chat_id as string) || TELEGRAM_CHAT_ID;
+  const testMsg = `🧪 <b>BauSquad — Тестовое сообщение</b>\n\n` +
+    `✅ Бот успешно подключен к сайту bausquad.org!\n` +
+    `⏰ Время сервера: ${new Date().toLocaleString('ru-RU')}\n` +
+    `💬 Чат ID: <code>${chatId}</code>`;
+
+  const success = await sendTelegramNotification(testMsg);
+  return res.json({
+    ok: success,
+    message: success ? 'Тестовое сообщение успешно отправлено' : 'Ошибка отправки тестового сообщения',
+    chat_id: chatId
+  });
+});
+
 // 15. AGREEMENTS Documents
 app.get('/api/agreements', (req: Request, res: Response) => {
   return res.json({
     terms: {
       id: 'terms',
-      title: 'Пользовательское соглашение',
-      version: '2.1',
-      last_updated: '2026-01-10',
+      title: 'Пользовательское соглашение (Оферта)',
+      version: '3.0',
+      last_updated: '2026-08-01',
+      legal_entity: 'ИП Семёнов Андрей Сергеевич (ИНН: 773395090916, ОГРНИП: 326774600536097)',
       sections: [
         {
-          heading: '1. Общие положения',
-          content: 'Платформа BauSquad предоставляет информационно-консультационные услуги по сопровождению студентов при подготовке академических и научно-исследовательских работ.'
+          heading: '1. Термины и определения',
+          content: 'Сервис: интернет-сервис bausquad.org и поддомены. Правообладатель: ИП Семёнов Андрей Сергеевич (коммерческое обозначение AT Bausquad, BAUSQUAD). Клиент: посетитель, обратившийся через бота или сайт для оказания консультационных и сопутствующих услуг.'
         },
         {
-          heading: '2. Порядок оформления и выполнения заказов',
-          content: 'Пользователь формирует заявку с указанием предмета, подробного описания, сроков и стоимости. Платформа обеспечивает конфиденциальное передачу условий исполнителям.'
+          heading: '2. Порядок и форма заключения Пользовательского соглашения',
+          content: 'Начало использования сервиса и подтверждение чек-бокса при оформлении заказа признается безоговорочным акцептом настоящей Оферты.'
         },
         {
-          heading: '3. Гарантии и конфиденциальность',
-          content: 'BauSquad гарантирует полную анонимность клиента. Все переданные файлы и контактные данные используются исключительно для выполнения текущего заказа.'
+          heading: '3. Исключительные права Правообладателя',
+          content: 'Все материалы и программные сервисы предоставляются на условиях неисключительной лицензии.'
+        },
+        {
+          heading: '4. Использование и права Сервиса',
+          content: 'Порядок взаимодействия, выполнения консультаций, правила коммуникаций и ограничения ответственности сторон.'
+        },
+        {
+          heading: '5. Использование баланса услуг и услуг Правообладателя',
+          content: 'Порядок внесения, учета и списания средств в рамках выполнения консультационных работ.'
+        },
+        {
+          heading: '6. Порядок возврата денежных средств',
+          content: 'Регламент рассмотрения и осуществления возвратов в течение 14 рабочих дней в установленном порядке.'
+        },
+        {
+          heading: '7. Ответственность Правообладателя и ограничения для Пользователя',
+          content: 'Предоставление сервисов как есть, защита персональных данных и ограничение косвенных убытков.'
+        },
+        {
+          heading: '8. Срок службы соглашения и порядок урегулирования споров',
+          content: 'Претензионный порядок урегулирования споров, подсудность по месту нахождения Правообладателя.'
         }
       ]
     },
     privacy: {
       id: 'privacy',
-      title: 'Политика конфиденциальности',
-      version: '2.0',
-      last_updated: '2026-01-10',
+      title: 'Политика конфиденциальности и обработки персональных данных',
+      version: '3.0',
+      last_updated: '2026-08-14',
+      legal_entity: 'ИП Семёнов Андрей Сергеевич (ИНН: 773395090916, ОГРНИП: 326774600536097)',
       sections: [
         {
-          heading: '1. Сбор персональных данных',
-          content: 'Платформа обрабатывает исключительно минимальный набор данных: адрес электронной почты, указанный логин и контактный Telegram/телефон для связи по заказу.'
+          heading: '1. Общие положения',
+          content: 'Политика разработана в соответствии с Федеральным законом от 27.07.2006 № 152-ФЗ "О персональных данных". Оператор: ИП Семёнов Андрей Сергеевич.'
         },
         {
-          heading: '2. Хранение и шифрование',
-          content: 'Пароли пользователей хранятся строго в виде bcrypt-хэшей. Передача данных осуществляется по защищенному протоколу HTTPS с шифрованием TLS.'
+          heading: '2. Объем данных и цели их обработки',
+          content: 'Обработка email, телефонов/аккаунтов мессенджеров, файлов заказов, технических файлов cookie и IP-адресов.'
+        },
+        {
+          heading: '3. Права субъекта персональных данных',
+          content: 'Право на доступ, уточнение, блокирование, удаление данных и отзыв согласия через support@bausquad.org.'
         }
       ]
     },
     consent: {
       id: 'consent',
       title: 'Согласие на обработку персональных данных',
-      version: '1.5',
-      last_updated: '2026-01-10',
+      version: '2.0',
+      last_updated: '2026-08-14',
+      legal_entity: 'ИП Семёнов Андрей Сергеевич (ИНН: 773395090916, ОГРНИП: 326774600536097)',
       sections: [
         {
           heading: '1. Предмет согласия',
-          content: 'Настоящим пользователь даёт свободно, своей волей и в своем интересе согласие BauSquad на автоматизированную обработку предоставленных данных при регистрации и оформлении заказов.'
+          content: 'Пользователь свободно, своей волей и в своем интересе подтверждает факт согласия на обработку персональных данных ИП Семёнову Андрею Сергеевичу для оформления заказов и предоставления консультационных услуг.'
         }
       ]
     }

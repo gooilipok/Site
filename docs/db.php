@@ -13,7 +13,49 @@ function ensureDatabaseSchema(PDO $pdo): void {
     $migrated = true;
 
     try {
-        // 1. Create verification_codes table if it does not exist
+        // 1. Create users table if missing
+        $pdo->exec("CREATE TABLE IF NOT EXISTS `users` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `login` VARCHAR(64) NULL,
+            `password_hash` VARCHAR(255) NULL,
+            `email` VARCHAR(255) NULL,
+            `tg_id` BIGINT NULL,
+            `role` VARCHAR(20) NOT NULL DEFAULT 'customer',
+            `account_status` VARCHAR(20) NOT NULL DEFAULT 'active',
+            `registration_date` DATETIME NULL,
+            `is_verified` TINYINT(1) NOT NULL DEFAULT 1,
+            `telegram_handle` VARCHAR(255) DEFAULT '',
+            `user_agreement` TINYINT(1) DEFAULT 1,
+            `user_agreement_date` DATETIME NULL,
+            `privacy_agreement` TINYINT(1) DEFAULT 1,
+            `privacy_agreement_date` DATETIME NULL,
+            `processing_personal_data_agreement` TINYINT(1) DEFAULT 1,
+            `processing_personal_data_agreement_date` DATETIME NULL,
+            UNIQUE KEY `uk_users_email` (`email`),
+            UNIQUE KEY `uk_users_login` (`login`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+        // 2. Create orders table if missing
+        $pdo->exec("CREATE TABLE IF NOT EXISTS `orders` (
+            `order_id` INT AUTO_INCREMENT PRIMARY KEY,
+            `client_id` INT NOT NULL DEFAULT 1,
+            `executer_id` INT NULL,
+            `subject` VARCHAR(255) NOT NULL DEFAULT '',
+            `title` VARCHAR(255) DEFAULT '',
+            `work_type` VARCHAR(100) DEFAULT 'Чертеж',
+            `description` TEXT,
+            `deadline` VARCHAR(100) DEFAULT '',
+            `contact` VARCHAR(255) DEFAULT '',
+            `price` VARCHAR(100) DEFAULT 'На обсуждении',
+            `client_price` VARCHAR(100) DEFAULT 'На обсуждении',
+            `executer_price` VARCHAR(100) DEFAULT '',
+            `files` TEXT NULL,
+            `status` VARCHAR(50) NOT NULL DEFAULT 'new',
+            `created_at` DATETIME NULL,
+            `updated_at` DATETIME NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+        // 3. Create verification_codes table if it does not exist
         $pdo->exec("CREATE TABLE IF NOT EXISTS `verification_codes` (
             `id` INT AUTO_INCREMENT PRIMARY KEY,
             `email` VARCHAR(255) NOT NULL,
@@ -23,7 +65,7 @@ function ensureDatabaseSchema(PDO $pdo): void {
             INDEX `idx_email_code` (`email`, `code`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
 
-        // 2. Ensure missing columns in users table
+        // 4. Ensure missing columns in users table
         $userCols = getTableColumns($pdo, 'users');
         if (!empty($userCols)) {
             $userAdds = [];
@@ -43,7 +85,7 @@ function ensureDatabaseSchema(PDO $pdo): void {
             }
         }
 
-        // 3. Ensure missing columns in orders table
+        // 5. Ensure missing columns in orders table
         $orderCols = getTableColumns($pdo, 'orders');
         if (!empty($orderCols)) {
             $orderAdds = [];
@@ -116,4 +158,12 @@ function getTableColumns(PDO $pdo, string $tableName): array {
     } catch (\Throwable $e) {
         return [];
     }
+}
+
+function getOrderPrimaryKey(PDO $pdo): string {
+    $cols = getTableColumns($pdo, 'orders');
+    if (in_array('order_id', $cols, true)) {
+        return 'order_id';
+    }
+    return 'id';
 }

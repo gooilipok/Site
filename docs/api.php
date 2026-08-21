@@ -14,6 +14,116 @@ require_once __DIR__ . '/mail.php';
 
 sendCorsHeaders();
 
+// Helper: Save uploaded files securely
+function saveOrderUploads(array $rawFiles, int $orderId): array {
+    $uploadsDir = rtrim(UPLOADS_DIR, '/');
+    if (!is_dir($uploadsDir)) {
+        @mkdir($uploadsDir, 0755, true);
+    }
+
+    $savedFiles = [];
+    foreach ($rawFiles as $idx => $f) {
+        $name = basename($f['name'] ?? ("file_" . ($idx + 1)));
+        $mime = $f['type'] ?? 'application/octet-stream';
+        $size = (int)($f['size'] ?? 0);
+        $data = $f['data'] ?? ($f['content'] ?? ($f['base64'] ?? ''));
+
+        if (!empty($data) && preg_match('#^data:([^;]+);base64,(.+)$#s', $data, $matches)) {
+            $mime = $matches[1];
+            $decoded = base64_decode($matches[2]);
+            if ($decoded !== false) {
+                $ext = pathinfo($name, PATHINFO_EXTENSION);
+                if (empty($ext)) {
+                    $extMap = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'application/pdf' => 'pdf', 'application/zip' => 'zip'];
+                    $ext = $extMap[$mime] ?? 'bin';
+                    $name .= '.' . $ext;
+                }
+                $safeName = "order_{$orderId}_" . time() . "_{$idx}_" . preg_replace('/[^a-zA-Z0-9_\.-]/', '_', $name);
+                $fullPath = $uploadsDir . '/' . $safeName;
+                if (@file_put_contents($fullPath, $decoded)) {
+                    $savedFiles[] = [
+                        'id' => "file-{$orderId}-{$idx}",
+                        'name' => $name,
+                        'size' => strlen($decoded),
+                        'type' => $mime,
+                        'path' => $fullPath,
+                        'url' => APP_URL . '/uploads/' . $safeName,
+                        'uploaded_at' => date('c')
+                    ];
+                }
+            }
+        } elseif (!empty($f['path']) && file_exists($f['path'])) {
+            $savedFiles[] = $f;
+        } elseif (!empty($name)) {
+            $savedFiles[] = [
+                'id' => "file-{$orderId}-{$idx}",
+                'name' => $name,
+                'size' => $size,
+                'type' => $mime,
+                'uploaded_at' => date('c')
+            ];
+        }
+    }
+    return $savedFiles;
+}
+
+// Helper: Format order record safely for frontend and API consumers
+function formatOrderRecord(array $r, ?PDO $pdo = null): array {
+    $id = (int)($r['order_id'] ?? ($r['id'] ?? 0));
+    $rawDesc = (string)($r['description'] ?? '');
+    
+    $subject = trim($r['subject'] ?? ($r['title'] ?? ''));
+    $workType = trim($r['work_type'] ?? '');
+    $deadline = trim($r['deadline'] ?? '');
+    $contact = trim($r['contact'] ?? '');
+    $priceStr = trim((string)($r['price'] ?? ($r['client_price'] ?? '')));
+    
+    // If columns were packed into composite description
+    if (empty($subject) && strpos($rawDesc, "Предмет:") !== false) {
+        if (preg_match('#Предмет:\s*([^\n]+)#u', $rawDesc, $m)) $subject = trim($m[1]);
+        if (empty($workType) && preg_match('#Тип:\s*([^\n]+)#u', $rawDesc, $m)) $workType = trim($m[1]);
+        if (empty($deadline) && preg_match('#Дедлайн:\s*([^\n]+)#u', $rawDesc, $m)) $deadline = trim($m[1]);
+        if (empty($contact) && preg_match('#Контакты:\s*([^\n]+)#u', $rawDesc, $m)) $contact = trim($m[1]);
+        if (empty($priceStr) && preg_match('#Бюджет:\s*([^\n]+)#u', $rawDesc, $m)) $priceStr = trim($m[1]);
+    }
+    
+    if (empty($subject)) $subject = 'Учебный проект';
+    if (empty($workType)) $workType = 'Чертеж / Проект';
+    
+    $files = [];
+    if (!empty($r['files'])) {
+        $decoded = @json_decode($r['files'], true);
+        if (is_array($decoded)) $files = $decoded;
+    }
+
+    $rawPrice = $r['client_price'] ?? ($r['price'] ?? 'На обсуждении');
+    $numericPrice = is_numeric($rawPrice) ? (float)$rawPrice : 0;
+    
+    return [
+        'id' => (string)$id,
+        'order_id' => $id,
+        'order_number' => 'ORD-' . str_pad((string)$id, 5, '0', STR_PAD_LEFT),
+        'client_id' => 'usr-' . ($r['client_id'] ?? 1),
+        'user_id' => (string)($r['client_id'] ?? 1),
+        'user_login' => $r['user_login'] ?? ($r['client_name'] ?? 'Клиент'),
+        'user_email' => $r['user_email'] ?? '',
+        'title' => $subject,
+        'subject' => $subject,
+        'work_type' => $workType,
+        'description' => $rawDesc,
+        'deadline' => $deadline ?: 'Не указан',
+        'contact' => $contact ?: 'Не указан',
+        'price' => $numericPrice > 0 ? (string)$numericPrice . ' ₽' : ($priceStr ?: 'На обсуждении'),
+        'client_price' => $priceStr ?: 'На обсуждении',
+        'executer_price' => $r['executer_price'] ?? '',
+        'status' => $r['status'] ?? 'new',
+        'files' => $files,
+        'files_count' => count($files),
+        'created_at' => $r['created_at'] ?? date('c'),
+        'updated_at' => $r['updated_at'] ?? ($r['created_at'] ?? date('c'))
+    ];
+}
+
 try {
     $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
     $rawUri = $_SERVER['REQUEST_URI'] ?? '/';
@@ -191,113 +301,6 @@ try {
         jsonResponse($mailRes, !empty($mailRes['success']) ? 200 : 500);
     }
 
-    // Save uploaded files helper
-    function saveOrderUploads(array $rawFiles, int $orderId): array {
-        $uploadsDir = rtrim(UPLOADS_DIR, '/');
-        if (!is_dir($uploadsDir)) {
-            @mkdir($uploadsDir, 0755, true);
-        }
-
-        $savedFiles = [];
-        foreach ($rawFiles as $idx => $f) {
-            $name = basename($f['name'] ?? ("file_" . ($idx + 1)));
-            $mime = $f['type'] ?? 'application/octet-stream';
-            $size = (int)($f['size'] ?? 0);
-            $data = $f['data'] ?? ($f['content'] ?? ($f['base64'] ?? ''));
-
-            if (!empty($data) && preg_match('#^data:([^;]+);base64,(.+)$#s', $data, $matches)) {
-                $mime = $matches[1];
-                $decoded = base64_decode($matches[2]);
-                if ($decoded !== false) {
-                    $ext = pathinfo($name, PATHINFO_EXTENSION);
-                    if (empty($ext)) {
-                        $extMap = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'application/pdf' => 'pdf', 'application/zip' => 'zip'];
-                        $ext = $extMap[$mime] ?? 'bin';
-                        $name .= '.' . $ext;
-                    }
-                    $safeName = "order_{$orderId}_" . time() . "_{$idx}_" . preg_replace('/[^a-zA-Z0-9_\.-]/', '_', $name);
-                    $fullPath = $uploadsDir . '/' . $safeName;
-                    if (@file_put_contents($fullPath, $decoded)) {
-                        $savedFiles[] = [
-                            'id' => "file-{$orderId}-{$idx}",
-                            'name' => $name,
-                            'size' => strlen($decoded),
-                            'type' => $mime,
-                            'path' => $fullPath,
-                            'url' => APP_URL . '/uploads/' . $safeName,
-                            'uploaded_at' => date('c')
-                        ];
-                    }
-                }
-            } elseif (!empty($f['path']) && file_exists($f['path'])) {
-                $savedFiles[] = $f;
-            } elseif (!empty($name)) {
-                $savedFiles[] = [
-                    'id' => "file-{$orderId}-{$idx}",
-                    'name' => $name,
-                    'size' => $size,
-                    'type' => $mime,
-                    'uploaded_at' => date('c')
-                ];
-            }
-        }
-        return $savedFiles;
-    }
-
-    function formatOrderRecord(array $r, ?PDO $pdo = null): array {
-        $id = (int)($r['id'] ?? 0);
-        $rawDesc = (string)($r['description'] ?? '');
-        
-        $subject = trim($r['subject'] ?? ($r['title'] ?? ''));
-        $workType = trim($r['work_type'] ?? '');
-        $deadline = trim($r['deadline'] ?? '');
-        $contact = trim($r['contact'] ?? '');
-        $priceStr = trim((string)($r['price'] ?? ($r['client_price'] ?? '')));
-        
-        // If columns were packed into description
-        if (empty($subject) && strpos($rawDesc, "Предмет:") !== false) {
-            if (preg_match('#Предмет:\s*([^\n]+)#u', $rawDesc, $m)) $subject = trim($m[1]);
-            if (empty($workType) && preg_match('#Тип:\s*([^\n]+)#u', $rawDesc, $m)) $workType = trim($m[1]);
-            if (empty($deadline) && preg_match('#Дедлайн:\s*([^\n]+)#u', $rawDesc, $m)) $deadline = trim($m[1]);
-            if (empty($contact) && preg_match('#Контакты:\s*([^\n]+)#u', $rawDesc, $m)) $contact = trim($m[1]);
-        }
-        
-        if (empty($subject)) $subject = 'Учебный проект';
-        if (empty($workType)) $workType = 'Чертеж / Проект';
-        
-        $files = [];
-        if (!empty($r['files'])) {
-            $decoded = @json_decode($r['files'], true);
-            if (is_array($decoded)) $files = $decoded;
-        }
-
-        $rawPrice = $r['price'] ?? ($r['client_price'] ?? 'На обсуждении');
-        $numericPrice = is_numeric($rawPrice) ? (float)$rawPrice : 0;
-        
-        return [
-            'id' => (string)$id,
-            'order_number' => 'ORD-' . str_pad((string)$id, 5, '0', STR_PAD_LEFT),
-            'client_id' => 'usr-' . ($r['client_id'] ?? 1),
-            'user_id' => (string)($r['client_id'] ?? 1),
-            'user_login' => $r['user_login'] ?? ($r['client_name'] ?? 'Клиент'),
-            'user_email' => $r['user_email'] ?? '',
-            'title' => $subject,
-            'subject' => $subject,
-            'work_type' => $workType,
-            'description' => $rawDesc,
-            'deadline' => $deadline ?: 'Не указан',
-            'contact' => $contact ?: 'Не указан',
-            'price' => $numericPrice > 0 ? (string)$numericPrice . ' ₽' : ($priceStr ?: 'На обсуждении'),
-            'client_price' => $priceStr ?: 'На обсуждении',
-            'executer_price' => $r['executer_price'] ?? '',
-            'status' => $r['status'] ?? 'new',
-            'files' => $files,
-            'files_count' => count($files),
-            'created_at' => $r['created_at'] ?? date('c'),
-            'updated_at' => $r['updated_at'] ?? date('c')
-        ];
-    }
-
     // ==========================================\
     // 2. AUTHENTICATION
     // ==========================================\
@@ -348,22 +351,28 @@ try {
 
             if (in_array('user_agreement', $cols, true)) {
                 $insertCols[] = 'user_agreement';
-                $insertCols[] = 'user_agreement_date';
                 $placeholders[] = '1';
+            }
+            if (in_array('user_agreement_date', $cols, true)) {
+                $insertCols[] = 'user_agreement_date';
                 $placeholders[] = '?';
                 $params[] = $now;
             }
             if (in_array('privacy_agreement', $cols, true)) {
                 $insertCols[] = 'privacy_agreement';
-                $insertCols[] = 'privacy_agreement_date';
                 $placeholders[] = '1';
+            }
+            if (in_array('privacy_agreement_date', $cols, true)) {
+                $insertCols[] = 'privacy_agreement_date';
                 $placeholders[] = '?';
                 $params[] = $now;
             }
             if (in_array('processing_personal_data_agreement', $cols, true)) {
                 $insertCols[] = 'processing_personal_data_agreement';
-                $insertCols[] = 'processing_personal_data_agreement_date';
                 $placeholders[] = '1';
+            }
+            if (in_array('processing_personal_data_agreement_date', $cols, true)) {
+                $insertCols[] = 'processing_personal_data_agreement_date';
                 $placeholders[] = '?';
                 $params[] = $now;
             }
@@ -408,6 +417,31 @@ try {
             'account_status' => 'active',
             'is_verified' => true,
             'created_at' => date('c'),
+            'telegram_handle' => '',
+            'tg_id' => '',
+            'agreements' => [
+                'terms_accepted' => true,
+                'terms_accepted_at' => date('c'),
+                'privacy_accepted' => true,
+                'privacy_accepted_at' => date('c'),
+                'consent_accepted' => true,
+                'consent_accepted_at' => date('c')
+            ],
+            'order_count' => 0
+        ];
+
+        jsonResponse([
+            'message' => 'Регистрация успешно завершена',
+            'user' => $userObj,
+            'tokens' => [
+                'access_token' => $accessToken,
+                'refresh_token' => $refreshToken,
+                'token_type' => 'Bearer',
+                'expires_in' => JWT_ACCESS_EXPIRY
+            ],
+            'debug_code' => (APP_ENV !== 'production') ? $code : null
+        ], 201);
+    }
             'telegram_handle' => '',
             'tg_id' => '',
             'agreements' => [
@@ -801,9 +835,10 @@ try {
         // Update files JSON in orders table if column exists
         if ($pdo && !empty($savedFiles)) {
             $cols = getTableColumns($pdo, 'orders');
+            $pk = getOrderPrimaryKey($pdo);
             if (in_array('files', $cols, true)) {
                 try {
-                    $stmt = $pdo->prepare("UPDATE orders SET files = ? WHERE id = ?");
+                    $stmt = $pdo->prepare("UPDATE orders SET files = ? WHERE {$pk} = ?");
                     $stmt->execute([json_encode($savedFiles, JSON_UNESCAPED_UNICODE), $orderId]);
                 } catch (\Throwable $e) {}
             }
@@ -851,7 +886,8 @@ try {
 
         $orders = [];
         if ($pdo && $numericId > 0) {
-            $stmt = $pdo->prepare("SELECT * FROM orders WHERE client_id = ? ORDER BY id DESC");
+            $pk = getOrderPrimaryKey($pdo);
+            $stmt = $pdo->prepare("SELECT * FROM orders WHERE client_id = ? ORDER BY {$pk} DESC");
             $stmt->execute([$numericId]);
             $rows = $stmt->fetchAll();
 
@@ -916,7 +952,8 @@ try {
 
         $orders = [];
         if ($pdo) {
-            $rows = $pdo->query("SELECT o.*, u.login as user_login, u.email as user_email FROM orders o LEFT JOIN users u ON o.client_id = u.id ORDER BY o.id DESC LIMIT 200")->fetchAll();
+            $pk = getOrderPrimaryKey($pdo);
+            $rows = $pdo->query("SELECT o.*, u.login as user_login, u.email as user_email FROM orders o LEFT JOIN users u ON o.client_id = u.id ORDER BY o.{$pk} DESC LIMIT 200")->fetchAll();
             foreach ($rows as $r) {
                 $orders[] = formatOrderRecord($r, $pdo);
             }
@@ -936,7 +973,8 @@ try {
         $newStatus = trim($input['status'] ?? 'pending');
 
         if ($pdo) {
-            $stmt = $pdo->prepare("UPDATE orders SET status = ?, updated_at = NOW() WHERE id = ?");
+            $pk = getOrderPrimaryKey($pdo);
+            $stmt = $pdo->prepare("UPDATE orders SET status = ?, updated_at = NOW() WHERE {$pk} = ?");
             $stmt->execute([$newStatus, $orderId]);
         }
 
@@ -956,6 +994,7 @@ try {
 
         if ($pdo) {
             $cols = getTableColumns($pdo, 'orders');
+            $pk = getOrderPrimaryKey($pdo);
             $updates = ["price = ?"];
             $params = [$price];
             if (in_array('prepayment', $cols, true)) {
@@ -963,7 +1002,7 @@ try {
                 $params[] = $prepayment;
             }
             $params[] = $orderId;
-            $stmt = $pdo->prepare("UPDATE orders SET " . implode(', ', $updates) . ", updated_at = NOW() WHERE id = ?");
+            $stmt = $pdo->prepare("UPDATE orders SET " . implode(', ', $updates) . ", updated_at = NOW() WHERE {$pk} = ?");
             $stmt->execute($params);
         }
 

@@ -47,7 +47,7 @@ function getMimeTypeSafely($filePath, $default = 'application/octet-stream'): st
     return $map[$ext] ?? $default;
 }
 
-function sendTelegramRequest($endpoint, $postData, $isMultipart = false, $timeoutSeconds = 2): array {
+function sendTelegramRequest($endpoint, $postData, $isMultipart = false, $timeoutSeconds = 4): array {
     $token = TELEGRAM_BOT_TOKEN;
     if (empty($token)) {
         return ['ok' => false, 'error' => 'Bot token is empty'];
@@ -62,48 +62,73 @@ function sendTelegramRequest($endpoint, $postData, $isMultipart = false, $timeou
     $lastError = 'Unknown error';
 
     foreach ($endpoints as $url) {
-        if (!function_exists('curl_init')) {
-            return ['ok' => false, 'error' => 'cURL PHP extension is not installed'];
+        if (function_exists('curl_init')) {
+            $ch = @curl_init();
+            if ($ch) {
+                try {
+                    @curl_setopt($ch, CURLOPT_URL, $url);
+                    @curl_setopt($ch, CURLOPT_POST, true);
+                    @curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                    @curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, (int)$timeoutSeconds);
+                    @curl_setopt($ch, CURLOPT_TIMEOUT, (int)$timeoutSeconds + 2);
+                    @curl_setopt($ch, CURLOPT_NOSIGNAL, 1);
+                    @curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                    @curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+
+                    if ($isMultipart) {
+                        @curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
+                    } else {
+                        @curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+                        @curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($postData, JSON_UNESCAPED_UNICODE));
+                    }
+
+                    $response = @curl_exec($ch);
+                    $error = @curl_error($ch);
+                    @curl_close($ch);
+
+                    if ($response) {
+                        $json = @json_decode($response, true);
+                        if (!empty($json['ok'])) {
+                            return ['ok' => true, 'data' => $json];
+                        }
+                        if (!empty($json['description'])) {
+                            $lastError = $json['description'];
+                        }
+                    } else {
+                        $lastError = $error ?: 'No response / network timeout';
+                    }
+                } catch (\Throwable $e) {
+                    @curl_close($ch);
+                    $lastError = $e->getMessage();
+                }
+            }
         }
 
-        $ch = @curl_init();
-        if (!$ch) continue;
-
-        try {
-            @curl_setopt($ch, CURLOPT_URL, $url);
-            @curl_setopt($ch, CURLOPT_POST, true);
-            @curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            @curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, (int)$timeoutSeconds);
-            @curl_setopt($ch, CURLOPT_TIMEOUT, (int)$timeoutSeconds + 1);
-            @curl_setopt($ch, CURLOPT_NOSIGNAL, 1);
-            @curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-            @curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-
-            if ($isMultipart) {
-                @curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
-            } else {
-                @curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-                @curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($postData));
-            }
-
-            $response = @curl_exec($ch);
-            $error = @curl_error($ch);
-            @curl_close($ch);
-
-            if ($response) {
-                $json = @json_decode($response, true);
-                if (!empty($json['ok'])) {
-                    return ['ok' => true, 'data' => $json];
+        // Fallback to file_get_contents if curl didn't succeed and not multipart
+        if (!$isMultipart && ini_get('allow_url_fopen')) {
+            try {
+                $opts = [
+                    'http' => [
+                        'method' => 'POST',
+                        'header' => "Content-Type: application/json\r\n",
+                        'content' => json_encode($postData, JSON_UNESCAPED_UNICODE),
+                        'timeout' => $timeoutSeconds,
+                        'ignore_errors' => true
+                    ],
+                    'ssl' => [
+                        'verify_peer' => false,
+                        'verify_peer_name' => false
+                    ]
+                ];
+                $context = @stream_context_create($opts);
+                $res = @file_get_contents($url, false, $context);
+                if ($res) {
+                    $json = @json_decode($res, true);
+                    if (!empty($json['ok'])) {
+                        return ['ok' => true, 'data' => $json];
+                    }
                 }
-                if (!empty($json['description'])) {
-                    $lastError = $json['description'];
-                }
-            } else {
-                $lastError = $error ?: 'No response / network timeout';
-            }
-        } catch (\Throwable $e) {
-            @curl_close($ch);
-            $lastError = $e->getMessage();
+            } catch (\Throwable $e) {}
         }
     }
 

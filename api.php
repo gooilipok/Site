@@ -308,7 +308,7 @@ try {
     // 2. AUTHENTICATION
     // ==========================================\
 
-    // Register: Instant secure creation with legal agreements & welcome email
+    // Register Step 1: Validate data, generate verification code & send code to email
     if (($path === '/auth/register' || $path === '/register') && $method === 'POST') {
         $email = strtolower(trim($input['email'] ?? ''));
         $username = trim($input['username'] ?? '');
@@ -341,114 +341,52 @@ try {
             }
         }
 
-        $userId = null;
-        $now = date('Y-m-d H:i:s');
-
-        if ($pdo) {
-            $hashedPassword = password_hash($password, PASSWORD_BCRYPT);
-            $cols = getTableColumns($pdo, 'users');
-
-            $insertCols = ['login', 'email', 'password_hash', 'role', 'account_status', 'is_verified', 'registration_date'];
-            $placeholders = ['?', '?', '?', "'customer'", "'active'", '1', '?'];
-            $params = [$username ?: explode('@', $email)[0], $email, $hashedPassword, $now];
-
-            if (in_array('user_agreement', $cols, true)) {
-                $insertCols[] = 'user_agreement';
-                $placeholders[] = '1';
-            }
-            if (in_array('user_agreement_date', $cols, true)) {
-                $insertCols[] = 'user_agreement_date';
-                $placeholders[] = '?';
-                $params[] = $now;
-            }
-            if (in_array('privacy_agreement', $cols, true)) {
-                $insertCols[] = 'privacy_agreement';
-                $placeholders[] = '1';
-            }
-            if (in_array('privacy_agreement_date', $cols, true)) {
-                $insertCols[] = 'privacy_agreement_date';
-                $placeholders[] = '?';
-                $params[] = $now;
-            }
-            if (in_array('processing_personal_data_agreement', $cols, true)) {
-                $insertCols[] = 'processing_personal_data_agreement';
-                $placeholders[] = '1';
-            }
-            if (in_array('processing_personal_data_agreement_date', $cols, true)) {
-                $insertCols[] = 'processing_personal_data_agreement_date';
-                $placeholders[] = '?';
-                $params[] = $now;
-            }
-
-            $sql = "INSERT INTO users (" . implode(', ', $insertCols) . ") VALUES (" . implode(', ', $placeholders) . ")";
-            $stmt = $pdo->prepare($sql);
-            $stmt->execute($params);
-            $userId = (int)$pdo->lastInsertId();
-        } else {
-            $userId = time();
-        }
-
         $code = (string)random_int(100000, 999999);
         $expiresAt = date('Y-m-d H:i:s', time() + 900);
 
         if ($pdo) {
             try {
+                $delStmt = $pdo->prepare("DELETE FROM verification_codes WHERE LOWER(email) = ?");
+                $delStmt->execute([$email]);
+
                 $stmt = $pdo->prepare("INSERT INTO verification_codes (email, code, expires_at, created_at) VALUES (?, ?, ?, NOW())");
                 $stmt->execute([$email, $code, $expiresAt]);
             } catch (\Throwable $e) {}
         }
 
-        // Send welcome & verification email
-        $mailSubject = "Код подтверждения и регистрация в BauSquad: {$code}";
+        // Send verification email
+        $mailSubject = "Код подтверждения регистрации BauSquad: {$code}";
         $mailHtml = "<div style='font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif; max-width: 520px; margin: 0 auto; padding: 28px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;'>
-            <h2 style='color: #0f172a; margin: 0 0 8px 0; font-size: 22px;'>Добро пожаловать в BauSquad!</h2>
-            <p style='color: #334155; font-size: 15px; line-height: 1.5;'>Здравствуйте, <b>" . htmlspecialchars($username) . "</b>! Вы успешно зарегистрировались на платформе помощи в проектировании и чертежах <b>BauSquad</b>.</p>
-            <p style='color: #334155; font-size: 14px;'>Ваш логин: <b>" . htmlspecialchars($username) . "</b><br>Ваш Email: <b>" . htmlspecialchars($email) . "</b></p>
+            <div style='text-align: center; margin-bottom: 20px;'>
+                <h2 style='color: #0f172a; margin: 0 0 6px 0; font-size: 22px;'>Подтверждение регистрации</h2>
+                <p style='color: #64748b; margin: 0; font-size: 14px;'>Сервис помощи студентам BauSquad</p>
+            </div>
+            <p style='color: #334155; font-size: 15px; line-height: 1.5;'>
+                Здравствуйте, <b>" . htmlspecialchars($username) . "</b>! Для завершения регистрации на сайте <b>bausquad.org</b> введите 6-значный проверочный код:
+            </p>
             <div style='background: #f1f5f9; border: 2px dashed #94a3b8; border-radius: 8px; padding: 18px; text-align: center; margin: 20px 0;'>
-                <div style='color: #64748b; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px;'>Ваш проверочный код:</div>
                 <span style='font-size: 32px; font-weight: 700; letter-spacing: 8px; color: #1e293b; font-family: monospace;'>" . $code . "</span>
             </div>
-            <p style='color: #94a3b8; font-size: 12px; margin-top: 16px; border-top: 1px solid #f1f5f9; padding-top: 12px;'>Служба поддержки: support@bausquad.org &bull; bausquad.org</p>
+            <p style='color: #64748b; font-size: 13px; line-height: 1.4;'>
+                ⏱ Код действителен в течение 15 минут.<br>
+                Если вы не регистрировались на сайте bausquad.org, просто проигнорируйте это письмо.
+            </p>
+            <p style='color: #94a3b8; font-size: 12px; margin-top: 16px; border-top: 1px solid #f1f5f9; padding-top: 12px; text-align: center;'>
+                Служба поддержки BauSquad &bull; bausquad.org
+            </p>
         </div>";
 
         $mailResult = sendEmail($email, $mailSubject, $mailHtml);
 
-        $accessToken = generateJWT($userId, 'customer', 'access');
-        $refreshToken = generateJWT($userId, 'customer', 'refresh');
-
-        $userObj = [
-            'id' => 'usr-' . $userId,
+        jsonResponse([
+            'status' => 'code_sent',
+            'require_verification' => true,
+            'message' => 'Код подтверждения успешно отправлен на вашу почту ' . $email,
             'email' => $email,
             'username' => $username,
-            'role' => 'customer',
-            'account_status' => 'active',
-            'is_verified' => true,
-            'created_at' => date('c'),
-            'telegram_handle' => '',
-            'tg_id' => '',
-            'agreements' => [
-                'terms_accepted' => true,
-                'terms_accepted_at' => date('c'),
-                'privacy_accepted' => true,
-                'privacy_accepted_at' => date('c'),
-                'consent_accepted' => true,
-                'consent_accepted_at' => date('c')
-            ],
-            'order_count' => 0
-        ];
-
-        jsonResponse([
-            'message' => 'Регистрация успешно завершена',
-            'user' => $userObj,
-            'tokens' => [
-                'access_token' => $accessToken,
-                'refresh_token' => $refreshToken,
-                'token_type' => 'Bearer',
-                'expires_in' => JWT_ACCESS_EXPIRY
-            ],
             'mail_status' => $mailResult,
             'debug_code' => (APP_ENV !== 'production') ? $code : null
-        ], 201);
+        ], 200);
     }
 
     // Auth: Send verification code to email

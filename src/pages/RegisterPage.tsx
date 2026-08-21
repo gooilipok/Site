@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { ShieldCheck, Mail, Lock, User, FileText, CheckCircle, AlertCircle, KeyRound, ArrowRight, ArrowLeft } from 'lucide-react';
+import { ShieldCheck, Mail, Lock, User, CheckCircle, AlertCircle, KeyRound, ArrowRight, ArrowLeft, RefreshCw } from 'lucide-react';
 
 export const RegisterPage: React.FC = () => {
   const navigate = useNavigate();
-  const { registerStep1, verifyEmailCode } = useAuth();
+  const { registerStep1, verifyEmailCode, resendVerificationCode } = useAuth();
 
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
@@ -18,13 +18,24 @@ export const RegisterPage: React.FC = () => {
 
   const [step, setStep] = useState<'form' | 'verification'>('form');
   const [verificationCode, setVerificationCode] = useState('');
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [resendSuccess, setResendSuccess] = useState<string | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (resendCooldown > 0) {
+      timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000);
+    }
+    return () => clearTimeout(timer);
+  }, [resendCooldown]);
+
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setResendSuccess(null);
 
     if (password.length < 6) {
       setError('Пароль должен содержать не менее 6 символов');
@@ -43,8 +54,8 @@ export const RegisterPage: React.FC = () => {
 
     setLoading(true);
     const result = await registerStep1({
-      email,
-      username,
+      email: email.trim(),
+      username: username.trim(),
       password,
       terms_accepted: termsAccepted,
       privacy_accepted: privacyAccepted,
@@ -59,6 +70,7 @@ export const RegisterPage: React.FC = () => {
       navigate('/profile');
     } else {
       setStep('verification');
+      setResendCooldown(60);
     }
   };
 
@@ -66,19 +78,40 @@ export const RegisterPage: React.FC = () => {
     e.preventDefault();
     setError(null);
 
-    if (!verificationCode.trim()) {
-      setError('Введите 6-значный код подтверждения');
+    const cleanCode = verificationCode.trim();
+    if (!cleanCode || cleanCode.length < 6) {
+      setError('Введите полный 6-значный проверочный код');
       return;
     }
 
     setLoading(true);
-    const result = await verifyEmailCode(email, verificationCode);
+    const result = await verifyEmailCode(email.trim(), cleanCode, {
+      username: username.trim(),
+      password
+    });
     setLoading(false);
 
     if (!result.success) {
       setError(result.error || 'Неверный код подтверждения');
     } else {
       navigate('/profile');
+    }
+  };
+
+  const handleResendCode = async () => {
+    if (resendCooldown > 0 || loading) return;
+    setError(null);
+    setResendSuccess(null);
+    setLoading(true);
+
+    const res = await resendVerificationCode(email.trim(), username.trim());
+    setLoading(false);
+
+    if (res.success) {
+      setResendSuccess('Новый проверочный код отправлен на вашу почту');
+      setResendCooldown(60);
+    } else {
+      setError(res.error || 'Не удалось отправить код повторно');
     }
   };
 
@@ -101,14 +134,27 @@ export const RegisterPage: React.FC = () => {
           <div className="w-12 h-12 bg-[#2b3d4f] border border-[#c5a059]/40 flex items-center justify-center text-[#c5a059] mx-auto mb-3">
             <ShieldCheck className="w-6 h-6" />
           </div>
-          <h2 className="text-2xl font-black uppercase text-white tracking-wider">Регистрация в BauSquad</h2>
-          <p className="text-xs text-[#bdc3c7] mt-1">Создайте инженеру-студенту учетную запись</p>
+          <h2 className="text-2xl font-black uppercase text-white tracking-wider">
+            {step === 'form' ? 'Регистрация в BauSquad' : 'Подтверждение Почты'}
+          </h2>
+          <p className="text-xs text-[#bdc3c7] mt-1">
+            {step === 'form' 
+              ? 'Создайте учетную запись студента или инженера' 
+              : `Шаг 2 из 2: Введите код, отправленный на ${email}`}
+          </p>
         </div>
 
         {error && (
           <div className="mb-6 p-4 bg-[#e74c3c]/10 border border-[#e74c3c]/40 text-[#e74c3c] text-xs flex items-start gap-2">
             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
             <span>{error}</span>
+          </div>
+        )}
+
+        {resendSuccess && (
+          <div className="mb-6 p-4 bg-[#2ecc71]/10 border border-[#2ecc71]/40 text-[#2ecc71] text-xs flex items-start gap-2">
+            <CheckCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>{resendSuccess}</span>
           </div>
         )}
 
@@ -259,45 +305,72 @@ export const RegisterPage: React.FC = () => {
           <form onSubmit={handleVerifySubmit} className="space-y-4">
             
             <div className="p-4 bg-[#0f1418] border border-[#2b3d4f] text-center space-y-2">
-              <Mail className="w-8 h-8 text-[#f1c40f] mx-auto" />
-              <h4 className="font-bold text-white text-sm">Подтверждение Почты</h4>
+              <Mail className="w-8 h-8 text-[#c5a059] mx-auto animate-pulse" />
+              <h4 className="font-bold text-white text-sm">Проверьте вашу почту</h4>
               <p className="text-xs text-[#bdc3c7]">
-                Код подтверждения отправлен на <strong className="text-white">{email}</strong>
+                Мы отправили 6-значный код подтверждения на адрес:<br />
+                <strong className="text-white font-mono text-sm">{email}</strong>
               </p>
             </div>
 
             <div>
-              <label className="block text-xs font-bold uppercase text-[#c5a059] mb-1">6-значный код из письма *</label>
+              <label className="block text-xs font-bold uppercase text-[#c5a059] mb-1">
+                6-значный код подтверждения *
+              </label>
               <div className="relative">
                 <input
                   type="text"
                   value={verificationCode}
-                  onChange={(e) => setVerificationCode(e.target.value)}
+                  onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                   placeholder="123456"
                   required
                   maxLength={6}
-                  className="w-full bg-[#0f1418] border border-[#3d4e5f] text-white p-3 pl-10 text-center font-mono text-xl tracking-widest focus:border-[#c5a059] focus:outline-none"
+                  autoFocus
+                  className="w-full bg-[#0f1418] border border-[#3d4e5f] text-white p-3 pl-10 text-center font-mono text-2xl tracking-[0.5em] focus:border-[#c5a059] focus:outline-none"
                 />
-                <KeyRound className="w-5 h-5 text-[#bdc3c7] absolute left-3 top-3.5" />
+                <KeyRound className="w-5 h-5 text-[#bdc3c7] absolute left-3 top-4" />
               </div>
+              <p className="text-[11px] text-[#bdc3c7] mt-1 text-center">
+                Письмо приходит в течение 1 минуты. Если не нашли, проверьте папку «Спам».
+              </p>
             </div>
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || verificationCode.length < 6}
               className="w-full py-3.5 bg-[#2b3d4f] text-white font-bold text-sm uppercase tracking-wider border-b-4 border-[#1a252f] hover:bg-[#3d536b] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
             >
               <CheckCircle className="w-4 h-4 text-[#2ecc71]" />
-              <span>{loading ? 'Проверка...' : 'Подтвердить код'}</span>
+              <span>{loading ? 'Проверка...' : 'Завершить регистрацию'}</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setStep('form')}
-              className="w-full py-2 text-xs text-[#bdc3c7] hover:text-white uppercase font-bold"
-            >
-              ← Изменить регистрационные данные
-            </button>
+            <div className="flex flex-col sm:flex-row gap-2 pt-2">
+              <button
+                type="button"
+                onClick={handleResendCode}
+                disabled={resendCooldown > 0 || loading}
+                className="flex-1 py-2 px-3 text-xs bg-[#0f1418] border border-[#2b3d4f] text-[#c5a059] hover:bg-[#1f2c38] transition-all disabled:opacity-40 flex items-center justify-center gap-1.5"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                <span>
+                  {resendCooldown > 0 
+                    ? `Повтор через ${resendCooldown}с` 
+                    : 'Отправить код повторно'}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setStep('form');
+                  setError(null);
+                  setResendSuccess(null);
+                }}
+                className="flex-1 py-2 px-3 text-xs bg-[#0f1418] border border-[#2b3d4f] text-[#bdc3c7] hover:text-white hover:bg-[#1f2c38] transition-all"
+              >
+                ← Изменить email / данные
+              </button>
+            </div>
 
           </form>
         )}

@@ -6,6 +6,8 @@ export interface AuthRegisterResult {
   success: boolean;
   error?: string;
   autoLoggedIn?: boolean;
+  requireVerification?: boolean;
+  message?: string;
 }
 
 interface AuthContextType {
@@ -22,7 +24,8 @@ interface AuthContextType {
     privacy_accepted: boolean;
     consent_accepted: boolean;
   }) => Promise<AuthRegisterResult>;
-  verifyEmailCode: (email: string, code: string) => Promise<{ success: boolean; error?: string }>;
+  verifyEmailCode: (email: string, code: string, extraData?: { username?: string; password?: string }) => Promise<{ success: boolean; error?: string }>;
+  resendVerificationCode: (email: string, username?: string) => Promise<{ success: boolean; error?: string; message?: string }>;
   updateProfile: (username?: string, newPassword?: string, telegramHandle?: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
 }
@@ -118,31 +121,67 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: false, error: data.error || 'Ошибка регистрации' };
       }
 
+      // If backend instantly created session (e.g. bypass mode or pre-verified)
       if (data.user && data.tokens) {
         saveAuthSession(data.user, data.tokens);
-        return { success: true, autoLoggedIn: true };
+        return { success: true, autoLoggedIn: true, message: data.message };
       }
 
-      return { success: true, autoLoggedIn: false };
+      return {
+        success: true,
+        autoLoggedIn: false,
+        requireVerification: true,
+        message: data.message || 'Код подтверждения отправлен на вашу почту'
+      };
     } catch {
       return { success: false, error: 'Ошибка соединения с сервером' };
     }
   };
 
-  const verifyEmailCode = async (email: string, code: string) => {
+  const resendVerificationCode = async (email: string, username?: string) => {
     try {
-      const resp = await apiFetch('/api/auth/verify-code', {
+      const resp = await apiFetch('/api/auth/send-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, code })
+        body: JSON.stringify({ email, username })
       });
 
       const data = await resp.json();
       if (!resp.ok) {
-        return { success: false, error: data.error || 'Ошибка подтверждения кода' };
+        return { success: false, error: data.error || 'Не удалось повторно отправить код' };
       }
 
-      saveAuthSession(data.user, data.tokens);
+      return { success: true, message: data.message || 'Новый проверочный код успешно отправлен' };
+    } catch {
+      return { success: false, error: 'Ошибка соединения с сервером' };
+    }
+  };
+
+  const verifyEmailCode = async (
+    email: string,
+    code: string,
+    extraData?: { username?: string; password?: string }
+  ) => {
+    try {
+      const resp = await apiFetch('/api/auth/verify-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          code,
+          username: extraData?.username,
+          password: extraData?.password
+        })
+      });
+
+      const data = await resp.json();
+      if (!resp.ok) {
+        return { success: false, error: data.error || 'Неверный код подтверждения' };
+      }
+
+      if (data.user && data.tokens) {
+        saveAuthSession(data.user, data.tokens);
+      }
       return { success: true };
     } catch {
       return { success: false, error: 'Ошибка соединения с сервером' };
@@ -192,6 +231,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         login,
         registerStep1,
         verifyEmailCode,
+        resendVerificationCode,
         updateProfile,
         logout
       }}

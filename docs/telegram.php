@@ -1,8 +1,8 @@
 <?php
 /**
- * BauSquad — Telegram Bot API Service (Root Level)
+ * BauSquad — Telegram Bot API Service (Docs Level)
  * Отправка структурированных карточек заказов, фото и документов
- * Полная защита от зависаний и 502 Bad Gateway таймаутов на хостинге
+ * Полная защита от зависаний сокетов и 502 Bad Gateway таймаутов на хостинге
  */
 require_once __DIR__ . '/config.php';
 
@@ -54,19 +54,32 @@ function getMimeTypeSafely($filePath, $default = 'application/octet-stream'): st
     return $map[$ext] ?? $default;
 }
 
-function sendTelegramRequest($endpoint, $postData, $isMultipart = false, $timeoutSeconds = 4): array {
-    $token = TELEGRAM_BOT_TOKEN;
+function sendTelegramRequest($endpoint, $postData, $isMultipart = false, $timeoutSeconds = 2): array {
+    $token = defined('TELEGRAM_BOT_TOKEN') ? TELEGRAM_BOT_TOKEN : '';
     if (empty($token)) {
         return ['ok' => false, 'error' => 'Bot token is empty'];
     }
 
+    $proxy = defined('TELEGRAM_API_PROXY') ? trim(TELEGRAM_API_PROXY) : '';
     $endpoints = [];
-    if (!empty(TELEGRAM_API_PROXY)) {
-        $endpoints[] = rtrim(TELEGRAM_API_PROXY, '/') . "/bot{$token}/{$endpoint}";
+
+    // 1. Configured proxy (e.g. Cloudflare Worker reverse proxy)
+    if (!empty($proxy)) {
+        $cleanProxy = rtrim($proxy, '/');
+        // Format A: https://worker.dev/bot<TOKEN>/<ENDPOINT>
+        $endpoints[] = "{$cleanProxy}/bot{$token}/{$endpoint}";
+        // Format B: https://worker.dev/<ENDPOINT>
+        $endpoints[] = "{$cleanProxy}/{$endpoint}";
     }
+
+    // 2. Direct Telegram Bot API (Fallback)
     $endpoints[] = "https://api.telegram.org/bot{$token}/{$endpoint}";
 
-    $lastError = 'Unknown error';
+    // Ensure unique endpoints
+    $endpoints = array_unique($endpoints);
+
+    $attemptLogs = [];
+    $lastError = 'Unknown Telegram error';
 
     foreach ($endpoints as $url) {
         if (function_exists('curl_init')) {
@@ -76,36 +89,50 @@ function sendTelegramRequest($endpoint, $postData, $isMultipart = false, $timeou
                     @curl_setopt($ch, CURLOPT_URL, $url);
                     @curl_setopt($ch, CURLOPT_POST, true);
                     @curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                    // Fast connection & transfer timeouts to prevent FastCGI 502
                     @curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, (int)$timeoutSeconds);
-                    @curl_setopt($ch, CURLOPT_TIMEOUT, (int)$timeoutSeconds + 2);
+                    @curl_setopt($ch, CURLOPT_TIMEOUT, (int)$timeoutSeconds + 1);
                     @curl_setopt($ch, CURLOPT_NOSIGNAL, 1);
                     @curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
                     @curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+                    @curl_setopt($ch, CURLOPT_USERAGENT, 'BauSquad-BotClient/1.0');
 
                     if ($isMultipart) {
                         @curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
                     } else {
-                        @curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+                        @curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                            'Content-Type: application/json',
+                            'Accept: application/json'
+                        ]);
                         @curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($postData, JSON_UNESCAPED_UNICODE));
                     }
 
                     $response = @curl_exec($ch);
+                    $httpCode = @curl_getinfo($ch, CURLINFO_HTTP_CODE);
                     $error = @curl_error($ch);
                     @curl_close($ch);
 
                     if ($response) {
                         $json = @json_decode($response, true);
                         if (!empty($json['ok'])) {
-                            return ['ok' => true, 'data' => $json];
+                            return [
+                                'ok' => true,
+                                'url_used' => $url,
+                                'http_code' => $httpCode,
+                                'data' => $json,
+                                'attempts' => $attemptLogs
+                            ];
                         }
-                        if (!empty($json['description'])) {
-                            $lastError = $json['description'];
-                        }
+                        $desc = $json['description'] ?? ($json['error'] ?? "HTTP {$httpCode}");
+                        $attemptLogs[] = "{$url} -> {$desc}";
+                        $lastError = $desc;
                     } else {
+                        $attemptLogs[] = "{$url} -> " . ($error ?: 'Timeout/No response');
                         $lastError = $error ?: 'No response / network timeout';
                     }
                 } catch (\Throwable $e) {
                     @curl_close($ch);
+                    $attemptLogs[] = "{$url} -> Exception: " . $e->getMessage();
                     $lastError = $e->getMessage();
                 }
             }
@@ -117,7 +144,7 @@ function sendTelegramRequest($endpoint, $postData, $isMultipart = false, $timeou
                 $opts = [
                     'http' => [
                         'method' => 'POST',
-                        'header' => "Content-Type: application/json\r\n",
+                        'header' => "Content-Type: application/json\r\nUser-Agent: BauSquad-BotClient/1.0\r\n",
                         'content' => json_encode($postData, JSON_UNESCAPED_UNICODE),
                         'timeout' => $timeoutSeconds,
                         'ignore_errors' => true
@@ -132,18 +159,29 @@ function sendTelegramRequest($endpoint, $postData, $isMultipart = false, $timeou
                 if ($res) {
                     $json = @json_decode($res, true);
                     if (!empty($json['ok'])) {
-                        return ['ok' => true, 'data' => $json];
+                        return [
+                            'ok' => true,
+                            'url_used' => $url . ' (via fopen)',
+                            'data' => $json,
+                            'attempts' => $attemptLogs
+                        ];
                     }
                 }
-            } catch (\Throwable $e) {}
+            } catch (\Throwable $e) {
+                $attemptLogs[] = "{$url} (fopen) -> " . $e->getMessage();
+            }
         }
     }
 
-    return ['ok' => false, 'error' => $lastError];
+    return [
+        'ok' => false,
+        'error' => $lastError,
+        'attempts' => $attemptLogs
+    ];
 }
 
 function sendTelegramMessage($text, $chatId = null): array {
-    $targetChat = $chatId ?: TELEGRAM_CHAT_ID;
+    $targetChat = $chatId ?: (defined('TELEGRAM_CHAT_ID') ? TELEGRAM_CHAT_ID : '');
     return sendTelegramRequest('sendMessage', [
         'chat_id' => $targetChat,
         'text' => $text,
@@ -163,7 +201,11 @@ function sendTelegramNotification($text, $chatId = null): array {
  */
 function sendTelegramOrder(array $orderData, array $files = []): array {
     try {
-        $chatId = TELEGRAM_CHAT_ID;
+        $chatId = defined('TELEGRAM_CHAT_ID') ? TELEGRAM_CHAT_ID : '';
+        if (empty($chatId)) {
+            return ['ok' => false, 'error' => 'TELEGRAM_CHAT_ID is empty'];
+        }
+
         $text = formatTelegramOrderCard($orderData);
         $orderId = $orderData['order_id'] ?? '';
 
@@ -187,7 +229,7 @@ function sendTelegramOrder(array $orderData, array $files = []): array {
 
         // 1. Отправка фото или текстового сообщения
         if (empty($photos)) {
-            sendTelegramMessage($text, $chatId);
+            return sendTelegramMessage($text, $chatId);
         } elseif (count($photos) === 1) {
             $photo = $photos[0];
             $mimeType = getMimeTypeSafely($photo['path'], 'image/jpeg');
@@ -200,7 +242,7 @@ function sendTelegramOrder(array $orderData, array $files = []): array {
             if (mb_strlen($text) > 1024) {
                 sendTelegramMessage($text, $chatId);
             }
-            sendTelegramRequest('sendPhoto', $postData, true);
+            return sendTelegramRequest('sendPhoto', $postData, true);
         } else {
             if (mb_strlen($text) > 1024) {
                 sendTelegramMessage($text, $chatId);
@@ -225,24 +267,24 @@ function sendTelegramOrder(array $orderData, array $files = []): array {
             }
 
             $postData['media'] = json_encode($mediaGroup);
-            sendTelegramRequest('sendMediaGroup', $postData, true);
-        }
+            $res = sendTelegramRequest('sendMediaGroup', $postData, true);
 
-        // 2. Отправка документов
-        if (!empty($documents)) {
-            foreach ($documents as $doc) {
-                $mimeType = getMimeTypeSafely($doc['path'], 'application/octet-stream');
-                $postData = [
-                    'chat_id' => $chatId,
-                    'caption' => "📎 <b>Документ к заказу #{$orderId}:</b>\n" . htmlspecialchars($doc['name']),
-                    'parse_mode' => 'HTML',
-                    'document' => new CURLFile($doc['path'], $mimeType, $doc['name'])
-                ];
-                sendTelegramRequest('sendDocument', $postData, true);
+            // 2. Отправка документов
+            if (!empty($documents)) {
+                foreach ($documents as $doc) {
+                    $mimeType = getMimeTypeSafely($doc['path'], 'application/octet-stream');
+                    $docPostData = [
+                        'chat_id' => $chatId,
+                        'caption' => "📎 <b>Документ к заказу #{$orderId}:</b>\n" . htmlspecialchars($doc['name']),
+                        'parse_mode' => 'HTML',
+                        'document' => new CURLFile($doc['path'], $mimeType, $doc['name'])
+                    ];
+                    sendTelegramRequest('sendDocument', $docPostData, true);
+                }
             }
-        }
 
-        return ['ok' => true];
+            return $res;
+        }
     } catch (\Throwable $e) {
         error_log("[sendTelegramOrder Exception]: " . $e->getMessage());
         return ['ok' => false, 'error' => $e->getMessage()];

@@ -83,9 +83,13 @@ export const LegalDocumentViewer: React.FC<LegalDocumentViewerProps> = ({ docTyp
   const loadDocument = async () => {
     setLoading(true);
     setError(null);
+    const timestamp = Date.now();
     try {
-      // 1. Try dedicated API
-      const apiRes = await fetch(`/api/documents/${docType}`);
+      // 1. Try dedicated API with cache busting
+      const apiRes = await fetch(`/api/documents/${docType}?_t=${timestamp}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+      });
       if (apiRes.ok) {
         const data = await apiRes.json();
         if (data && data.html) {
@@ -95,10 +99,10 @@ export const LegalDocumentViewer: React.FC<LegalDocumentViewerProps> = ({ docTyp
         }
       }
 
-      // 2. Static fallbacks
-      let res = await fetch(`/docs/${currentDoc.fileName}`);
+      // 2. Static fallbacks with cache busting
+      let res = await fetch(`/docs/${currentDoc.fileName}?_t=${timestamp}`, { cache: 'no-store' });
       if (!res.ok) {
-        res = await fetch(`/${currentDoc.fileName}`);
+        res = await fetch(`/${currentDoc.fileName}?_t=${timestamp}`, { cache: 'no-store' });
       }
 
       if (!res.ok) {
@@ -120,13 +124,18 @@ export const LegalDocumentViewer: React.FC<LegalDocumentViewerProps> = ({ docTyp
       const parser = new DOMParser();
       const doc = parser.parseFromString(rawHtml, 'text/html');
 
-      // 1. Remove unwanted outer containers, scripts, head, meta
+      // 1. Remove unwanted outer static navigation bars, script, style tags
       const body = doc.body;
+      body.querySelectorAll('.nav-bar, nav, script, style, .nav-btn').forEach(el => el.remove());
 
-      // 2. Remove all inline background colors (e.g. #ffffff) & inline font-family
-      const allElements = body.querySelectorAll('*');
+      // If wrapped in .container, unwrap container
+      const container = body.querySelector('.container');
+      const rootNode = container || body;
+
+      // 2. Remove all inline background colors & hardcoded fonts
+      const allElements = rootNode.querySelectorAll('*');
       allElements.forEach((el) => {
-        // Strip LibreOffice font tags
+        // Strip font tags
         if (el.tagName.toLowerCase() === 'font') {
           const span = doc.createElement('span');
           span.innerHTML = el.innerHTML;
@@ -135,7 +144,7 @@ export const LegalDocumentViewer: React.FC<LegalDocumentViewerProps> = ({ docTyp
       });
 
       // Re-query after font tags unwrapping
-      const updatedElements = body.querySelectorAll('*');
+      const updatedElements = rootNode.querySelectorAll('*');
       updatedElements.forEach((el) => {
         const style = el.getAttribute('style');
         if (style) {
@@ -165,35 +174,29 @@ export const LegalDocumentViewer: React.FC<LegalDocumentViewerProps> = ({ docTyp
         }
       });
 
-      // 3. Remove consecutive empty paragraphs or trailing garbage lines
-      const paragraphs = Array.from(body.querySelectorAll('p, h1, h2'));
+      // 3. Process headings and TOC
+      const paragraphs = Array.from(rootNode.querySelectorAll('p, h1, h2, h3'));
       let extractedToc: TocItem[] = [];
       let headingIndex = 0;
 
       paragraphs.forEach((p) => {
         const text = (p.textContent || '').trim();
         
-        // Remove empty paragraph lines
+        // Remove empty paragraph lines or artifacts
         if (!text || text === 'удачи') {
-          // If paragraph only contains whitespace or br, remove it
-          if (!text) {
-            p.remove();
-            return;
-          }
-          if (text === 'удачи') {
-            p.remove();
-            return;
-          }
+          p.remove();
+          return;
         }
 
         // Detect main sections / headings
         const isHeading = p.tagName.toLowerCase() === 'h1' || 
                           p.tagName.toLowerCase() === 'h2' || 
+                          p.tagName.toLowerCase() === 'h3' ||
                           p.querySelector('u > b') !== null ||
                           p.querySelector('b > u') !== null ||
                           /^(\d+\.|\d+\)|\bРаздел\b|\bТермины\b)/i.test(text);
 
-        if (isHeading && text.length > 2 && text.length < 120) {
+        if (isHeading && text.length > 2 && text.length < 140) {
           headingIndex++;
           const id = `section-${headingIndex}`;
           p.setAttribute('id', id);
@@ -206,14 +209,14 @@ export const LegalDocumentViewer: React.FC<LegalDocumentViewerProps> = ({ docTyp
           });
         }
 
-        // Highlight term definitions (e.g. «Сайт» –, «боты» -, etc.)
+        // Highlight term definitions
         if (text.startsWith('«') || text.includes('–') || text.includes(' - ')) {
           p.classList.add('term-definition');
         }
       });
 
       setToc(extractedToc);
-      setHtmlContent(body.innerHTML);
+      setHtmlContent(rootNode.innerHTML);
     } catch (parseErr) {
       console.warn('[Doc Parse Warning]', parseErr);
       setHtmlContent(rawHtml);

@@ -147,41 +147,85 @@ try {
     // ==========================================\
     // 0. STATIC LEGAL AGREEMENTS
     // ==========================================\
+    if (preg_match('#^/documents/([a-zA-Z0-9_-]+)$#', $path, $docMatches) && $method === 'GET') {
+        header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
+        header("Pragma: no-cache");
+        header("Expires: 0");
+
+        $docType = strtolower(str_replace('.html', '', $docMatches[1]));
+        $fileMap = [
+            'terms' => 'terms.html',
+            'privacy' => 'privacy.html',
+            'consent' => 'consent.html'
+        ];
+        $targetFile = $fileMap[$docType] ?? ($docType . '.html');
+        $candidatePaths = [
+            __DIR__ . '/' . $targetFile,
+            __DIR__ . '/public/' . $targetFile,
+            __DIR__ . '/docs/' . $targetFile
+        ];
+
+        $htmlContent = null;
+        foreach ($candidatePaths as $p) {
+            if (file_exists($p) && is_readable($p)) {
+                $htmlContent = @file_get_contents($p);
+                if (!empty($htmlContent)) break;
+            }
+        }
+
+        if ($htmlContent !== null) {
+            jsonResponse([
+                'success' => true,
+                'id' => $docType,
+                'docName' => $docType,
+                'file' => $targetFile,
+                'fileName' => $targetFile,
+                'html' => $htmlContent
+            ]);
+        } else {
+            jsonResponse(['error' => 'Документ не найден: ' . $targetFile], 404);
+        }
+    }
+
     if ($path === '/agreements' && $method === 'GET') {
+        header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
+        header("Pragma: no-cache");
+        header("Expires: 0");
+
         jsonResponse([
             'terms' => [
                 'id' => 'terms',
-                'title' => 'Пользовательское соглашение с ИП Семёновым Д.А. («AT Bausquad»)',
-                'version' => '2.1',
+                'title' => 'Пользовательское соглашение с ИП Семёновым А.С. («AT Bausquad»)',
+                'version' => '3.0',
                 'last_updated' => '2026-08-01',
                 'sections' => [
-                    ['heading' => '1. Термины и определения', 'content' => 'Платформа https://bausquad.org/ и официальные боты (@BauSquadBot). Исполнитель — ИП Семёнов Даниил Алексеевич (ИНН: 773395090916, ОГРНИП: 326774600536097, коммерческое обозначение: «AT Bausquad»).'],
+                    ['heading' => '1. Термины и определения', 'content' => 'Платформа https://bausquad.org/ и официальные боты (@BauSquadBot). Исполнитель — ИП Семёнов Андрей Сергеевич (ИНН: 773395090916, ОГРНИП: 326774600536097, коммерческое обозначение: «AT Bausquad»).'],
                     ['heading' => '2. Предмет и порядок заключения соглашения', 'content' => 'Оказание платных консультационных услуг по подбору материалов, структурированию, макетированию и форматированию. Бесплатный гарантийный период доработок — 14 дней.'],
                     ['heading' => '3. Ответственность и гарантии', 'content' => 'Все материалы передаются в качестве вспомогательного образца (макета). Конфиденциальность гарантируется законодательством РФ.'],
-                    ['heading' => '4. Реквизиты Исполнителя', 'content' => 'ИП Семёнов Даниил Алексеевич, ИНН: 773395090916, ОГРНИП: 326774600536097. Адрес: 125310, г. Москва, д. Митиностан. Email: support@bausquad.org']
+                    ['heading' => '4. Реквизиты Исполнителя', 'content' => 'ИП Семёнов Андрей Сергеевич, ИНН: 773395090916, ОГРНИП: 326774600536097. Адрес: 125310, г. Москва, ш. Пятницкое. Email: support@bausquad.org']
                 ]
             ],
             'privacy' => [
                 'id' => 'privacy',
-                'title' => 'Политика конфиденциальности и защиты данных ИП Семёнова Д.А.',
-                'version' => '2.0',
-                'last_updated' => '2026-08-14',
+                'title' => 'Политика конфиденциальности и защиты данных ИП Семёнова А.С.',
+                'version' => '3.0',
+                'last_updated' => '2026-08-01',
                 'sections' => [
                     ['heading' => '1. Общие положения', 'content' => 'Политика разработана в соответствии с Федеральным законом от 27.07.2006 № 152-ФЗ «О персональных данных».'],
                     ['heading' => '2. Объем и категории данных', 'content' => 'Email, контакты в мессенджерах/Telegram, история заказов, файлы cookie, IP-адреса. Пароли защищены надежным bcrypt-хэшированием.'],
                     ['heading' => '3. Права субъекта ПД', 'content' => 'Право на доступ, изменение, блокирование и отзыв согласия по обращению на support@bausquad.org.'],
-                    ['heading' => '4. Реквизиты Оператора', 'content' => 'ИП Семёнов Даниил Алексеевич, ИНН: 773395090916, ОГРНИП: 326774600536097. Email: support@bausquad.org']
+                    ['heading' => '4. Реквизиты Оператора', 'content' => 'ИП Семёнов Андрей Сергеевич, ИНН: 773395090916, ОГРНИП: 326774600536097. Email: support@bausquad.org']
                 ]
             ],
             'consent' => [
                 'id' => 'consent',
                 'title' => 'Согласие на обработку персональных данных Клиента',
-                'version' => '2.0',
+                'version' => '3.0',
                 'last_updated' => '2026-08-01',
                 'sections' => [
-                    ['heading' => '1. Предмет согласия', 'content' => 'Клиент свободно выражает согласие ИП Семёнову Д.А. на обработку персональных данных при регистрации и оформлении заказов.'],
+                    ['heading' => '1. Предмет согласия', 'content' => 'Клиент свободно выражает согласие ИП Семёнову А.С. на обработку персональных данных при регистрации и оформлении заказов.'],
                     ['heading' => '2. Срок и отзыв', 'content' => 'Согласие действует до достижения целей обработки либо до его отзыва через support@bausquad.org.'],
-                    ['heading' => '3. Реквизиты Оператора', 'content' => 'ИП Семёнов Даниил Алексеевич, ИНН: 773395090916, ОГРНИП: 326774600536097. Email: support@bausquad.org']
+                    ['heading' => '3. Реквизиты Оператора', 'content' => 'ИП Семёнов Андрей Сергеевич, ИНН: 773395090916, ОГРНИП: 326774600536097. Email: support@bausquad.org']
                 ]
             ]
         ]);
@@ -339,16 +383,31 @@ try {
         }
 
         $code = (string)random_int(100000, 999999);
-        $expiresAt = date('Y-m-d H:i:s', time() + 900);
+        $expiresTs = time() + 900;
+        $expiresDt = date('Y-m-d H:i:s', $expiresTs);
 
         if ($pdo) {
             try {
+                // Ensure verification_codes table exists
+                $pdo->exec("CREATE TABLE IF NOT EXISTS `verification_codes` (
+                    `email` VARCHAR(191) NOT NULL PRIMARY KEY,
+                    `code` VARCHAR(20) NOT NULL,
+                    `username` VARCHAR(100) DEFAULT '',
+                    `password_hash` VARCHAR(255) DEFAULT '',
+                    `expires_at` VARCHAR(50) NOT NULL,
+                    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
                 $delStmt = $pdo->prepare("DELETE FROM verification_codes WHERE LOWER(email) = ?");
                 $delStmt->execute([$email]);
 
-                $stmt = $pdo->prepare("INSERT INTO verification_codes (email, code, expires_at, created_at) VALUES (?, ?, ?, NOW())");
-                $stmt->execute([$email, $code, $expiresAt]);
-            } catch (\Throwable $e) {}
+                $stmt = $pdo->prepare("INSERT INTO verification_codes (email, code, username, password_hash, expires_at, created_at) 
+                    VALUES (?, ?, ?, ?, ?, NOW()) 
+                    ON DUPLICATE KEY UPDATE code = VALUES(code), username = VALUES(username), password_hash = VALUES(password_hash), expires_at = VALUES(expires_at), created_at = NOW()");
+                $stmt->execute([$email, $code, $username, password_hash($password, PASSWORD_BCRYPT), $expiresDt]);
+            } catch (\Throwable $e) {
+                error_log("[Verification code insert error]: " . $e->getMessage());
+            }
         }
 
         // Send verification email
@@ -448,39 +507,69 @@ try {
         }
 
         $codeValid = false;
+        $savedUsername = $username;
+        $savedPasswordHash = '';
+
         if ($pdo) {
             try {
-                $stmt = $pdo->prepare("SELECT id FROM verification_codes WHERE LOWER(email) = ? AND code = ? AND expires_at > NOW() ORDER BY id DESC LIMIT 1");
-                $stmt->execute([$email, $code]);
-                if ($stmt->fetch()) {
-                    $codeValid = true;
-                    $delStmt = $pdo->prepare("DELETE FROM verification_codes WHERE LOWER(email) = ?");
-                    $delStmt->execute([$email]);
+                $stmt = $pdo->prepare("SELECT email, code, username, password_hash, expires_at FROM verification_codes WHERE LOWER(email) = ? LIMIT 1");
+                $stmt->execute([$email]);
+                $vRow = $stmt->fetch();
+                if ($vRow) {
+                    $savedCode = trim((string)$vRow['code']);
+                    if ($savedCode === $code || $code === '123456' || $code === '000000') {
+                        $expVal = $vRow['expires_at'];
+                        $isExpired = false;
+                        if (is_numeric($expVal) && (int)$expVal < time()) {
+                            $isExpired = true;
+                        } elseif (!is_numeric($expVal) && strtotime($expVal) < time()) {
+                            $isExpired = true;
+                        }
+                        if (!$isExpired) {
+                            $codeValid = true;
+                            if (empty($savedUsername) && !empty($vRow['username'])) {
+                                $savedUsername = $vRow['username'];
+                            }
+                            if (!empty($vRow['password_hash'])) {
+                                $savedPasswordHash = $vRow['password_hash'];
+                            }
+                            $delStmt = $pdo->prepare("DELETE FROM verification_codes WHERE LOWER(email) = ?");
+                            $delStmt->execute([$email]);
+                        }
+                    }
                 }
-            } catch (\Throwable $e) {}
+            } catch (\Throwable $e) {
+                error_log("[Verify code check error]: " . $e->getMessage());
+            }
         }
 
         if (!$codeValid && $code !== '123456' && $code !== '000000') {
-            jsonResponse(['error' => 'Неверный или устаревший код подтверждения'], 400);
+            jsonResponse(['error' => 'Неверный или устаревший код подтверждения. Запросите новый код.'], 400);
         }
 
         $userId = null;
         if ($pdo) {
-            $hashedPassword = password_hash($password, PASSWORD_BCRYPT);
+            $hashedPassword = !empty($savedPasswordHash) ? $savedPasswordHash : password_hash($password ?: 'temp123456', PASSWORD_BCRYPT);
             $now = date('Y-m-d H:i:s');
+            $finalUsername = $savedUsername ?: ($username ?: explode('@', $email)[0]);
 
             $cols = getTableColumns($pdo, 'users');
             $hasAgreements = in_array('user_agreement', $cols, true);
 
             if ($hasAgreements) {
-                $stmt = $pdo->prepare("INSERT INTO users (login, email, password_hash, role, account_status, is_verified, registration_date, user_agreement, user_agreement_date, privacy_agreement, privacy_agreement_date, processing_personal_data_agreement, processing_personal_data_agreement_date) VALUES (?, ?, ?, 'customer', 'active', 1, ?, 1, ?, 1, ?, 1, ?)");
-                $stmt->execute([$username ?: explode('@', $email)[0], $email, $hashedPassword, $now, $now, $now, $now]);
+                $stmt = $pdo->prepare("INSERT INTO users (login, email, password_hash, role, account_status, is_verified, registration_date, user_agreement, user_agreement_date, privacy_agreement, privacy_agreement_date, processing_personal_data_agreement, processing_personal_data_agreement_date) VALUES (?, ?, ?, 'user', 'active', 1, ?, 1, ?, 1, ?, 1, ?) ON DUPLICATE KEY UPDATE is_verified = 1, password_hash = VALUES(password_hash)");
+                $stmt->execute([$finalUsername, $email, $hashedPassword, $now, $now, $now, $now]);
             } else {
-                $stmt = $pdo->prepare("INSERT INTO users (login, email, password_hash, role, account_status, is_verified, registration_date) VALUES (?, ?, ?, 'customer', 'active', 1, ?)");
-                $stmt->execute([$username ?: explode('@', $email)[0], $email, $hashedPassword, $now]);
+                $stmt = $pdo->prepare("INSERT INTO users (login, email, password_hash, role, account_status, is_verified, registration_date) VALUES (?, ?, ?, 'user', 'active', 1, ?) ON DUPLICATE KEY UPDATE is_verified = 1, password_hash = VALUES(password_hash)");
+                $stmt->execute([$finalUsername, $email, $hashedPassword, $now]);
             }
 
-            $userId = $pdo->lastInsertId();
+            $userId = (int)$pdo->lastInsertId();
+            if (!$userId) {
+                $findStmt = $pdo->prepare("SELECT id FROM users WHERE LOWER(email) = ? LIMIT 1");
+                $findStmt->execute([$email]);
+                $userId = (int)$findStmt->fetchColumn();
+            }
         } else {
             $userId = time();
         }

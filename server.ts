@@ -2079,7 +2079,11 @@ app.get('/api/telegram/test', async (req: Request, res: Response) => {
 
 // 15. AGREEMENTS Documents
 app.get('/api/documents/:docType', (req: Request, res: Response) => {
-  const docType = (req.params.docType || '').toLowerCase();
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
+  const docType = (req.params.docType || '').toLowerCase().replace('.html', '');
   const fileMap: Record<string, string> = {
     terms: 'terms.html',
     privacy: 'privacy.html',
@@ -2096,7 +2100,7 @@ app.get('/api/documents/:docType', (req: Request, res: Response) => {
     if (fs.existsSync(p)) {
       try {
         const html = fs.readFileSync(p, 'utf-8');
-        return res.json({ id: docType, file: targetFile, html });
+        return res.json({ success: true, id: docType, docName: docType, file: targetFile, fileName: targetFile, html });
       } catch (err) {
         console.error('[Document Read Error]', p, err);
       }
@@ -2107,6 +2111,10 @@ app.get('/api/documents/:docType', (req: Request, res: Response) => {
 });
 
 app.get('/api/agreements', (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
   return res.json({
     terms: {
       id: 'terms',
@@ -2240,6 +2248,10 @@ const agreementFiles: Record<string, string> = {
 };
 
 app.get(['/terms.html', '/privacy.html', '/consent.html'], (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
   const fileName = path.basename(req.path);
   const filePath = path.join(docsPath, fileName);
   if (fs.existsSync(filePath)) {
@@ -2252,33 +2264,6 @@ app.get(['/terms.html', '/privacy.html', '/consent.html'], (req: Request, res: R
     return res.sendFile(publicFilePath);
   }
   return res.status(404).send('Document not found');
-});
-
-// API route to get raw HTML text of legal agreements directly from /docs
-app.get('/api/documents/:docName', (req: Request, res: Response) => {
-  const docName = req.params.docName.toLowerCase().replace('.html', '');
-  const fileName = agreementFiles[docName] || `${docName}.html`;
-  
-  let docFilePath = path.join(docsPath, fileName);
-  if (!fs.existsSync(docFilePath)) {
-    docFilePath = path.join(process.cwd(), 'public', fileName);
-  }
-
-  if (fs.existsSync(docFilePath)) {
-    try {
-      const htmlContent = fs.readFileSync(docFilePath, 'utf-8');
-      return res.json({
-        success: true,
-        docName,
-        fileName,
-        html: htmlContent
-      });
-    } catch (err: any) {
-      return res.status(500).json({ error: 'Ошибка чтения файла документа' });
-    }
-  }
-
-  return res.status(404).json({ error: `Документ "${docName}" не найден` });
 });
 
 // Serve root alarm audio files

@@ -147,6 +147,39 @@ try {
     // ==========================================\
     // 0. STATIC LEGAL AGREEMENTS
     // ==========================================\
+    if (preg_match('#^/documents/([a-zA-Z0-9_-]+)$#', $path, $docMatches) && $method === 'GET') {
+        $docType = strtolower($docMatches[1]);
+        $fileMap = [
+            'terms' => 'terms.html',
+            'privacy' => 'privacy.html',
+            'consent' => 'consent.html'
+        ];
+        $targetFile = $fileMap[$docType] ?? ($docType . '.html');
+        $candidatePaths = [
+            __DIR__ . '/' . $targetFile,
+            __DIR__ . '/public/' . $targetFile,
+            __DIR__ . '/docs/' . $targetFile
+        ];
+
+        $htmlContent = null;
+        foreach ($candidatePaths as $p) {
+            if (file_exists($p) && is_readable($p)) {
+                $htmlContent = @file_get_contents($p);
+                if (!empty($htmlContent)) break;
+            }
+        }
+
+        if ($htmlContent !== null) {
+            jsonResponse([
+                'id' => $docType,
+                'file' => $targetFile,
+                'html' => $htmlContent
+            ]);
+        } else {
+            jsonResponse(['error' => 'Документ не найден: ' . $targetFile], 404);
+        }
+    }
+
     if ($path === '/agreements' && $method === 'GET') {
         jsonResponse([
             'terms' => [

@@ -2078,6 +2078,34 @@ app.get('/api/telegram/test', async (req: Request, res: Response) => {
 });
 
 // 15. AGREEMENTS Documents
+app.get('/api/documents/:docType', (req: Request, res: Response) => {
+  const docType = (req.params.docType || '').toLowerCase();
+  const fileMap: Record<string, string> = {
+    terms: 'terms.html',
+    privacy: 'privacy.html',
+    consent: 'consent.html'
+  };
+  const targetFile = fileMap[docType] || `${docType}.html`;
+  const candidatePaths = [
+    path.join(process.cwd(), 'public', targetFile),
+    path.join(process.cwd(), 'docs', targetFile),
+    path.join(process.cwd(), targetFile)
+  ];
+
+  for (const p of candidatePaths) {
+    if (fs.existsSync(p)) {
+      try {
+        const html = fs.readFileSync(p, 'utf-8');
+        return res.json({ id: docType, file: targetFile, html });
+      } catch (err) {
+        console.error('[Document Read Error]', p, err);
+      }
+    }
+  }
+
+  return res.status(404).json({ error: `Документ ${targetFile} не найден` });
+});
+
 app.get('/api/agreements', (req: Request, res: Response) => {
   return res.json({
     terms: {

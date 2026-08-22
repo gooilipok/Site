@@ -41,36 +41,72 @@ export const EmergencySafetyButton: React.FC<EmergencySafetyButtonProps> = ({
   const [shakeLock, setShakeLock] = useState<boolean>(false);
   const [soundMuted, setSoundMuted] = useState<boolean>(false);
 
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const oscRef = useRef<OscillatorNode | null>(null);
+  const gainRef = useRef<GainNode | null>(null);
+  const intervalRef = useRef<any>(null);
 
-  // Direct and robust /alarm.mp3 playback
+  // Web Audio API Alarm Synthesizer (self-contained, no network dependencies)
   const playAlarmSound = () => {
     if (soundMuted) return;
 
     try {
-      if (!audioRef.current) {
-        const audio = new Audio('/alarm.mp3');
-        audio.loop = true;
-        audioRef.current = audio;
+      if (!audioCtxRef.current) {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtx) {
+          audioCtxRef.current = new AudioCtx();
+        }
       }
-      
-      audioRef.current.currentTime = 0;
-      const playPromise = audioRef.current.play();
-      if (playPromise !== undefined) {
-        playPromise.catch((err) => {
-          console.warn('[Audio Play /alarm.mp3]', err);
-        });
+
+      if (audioCtxRef.current) {
+        if (audioCtxRef.current.state === 'suspended') {
+          audioCtxRef.current.resume();
+        }
+
+        if (!oscRef.current) {
+          const ctx = audioCtxRef.current;
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+
+          osc.type = 'sawtooth';
+          gain.gain.setValueAtTime(0.12, ctx.currentTime);
+
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start();
+
+          oscRef.current = osc;
+          gainRef.current = gain;
+
+          let high = false;
+          intervalRef.current = setInterval(() => {
+            if (oscRef.current && audioCtxRef.current) {
+              const freq = high ? 650 : 850;
+              oscRef.current.frequency.setValueAtTime(freq, audioCtxRef.current.currentTime);
+              high = !high;
+            }
+          }, 350);
+        }
       }
     } catch (err) {
-      console.warn('[Audio Exception]', err);
+      console.warn('[Synthesizer Exception]', err);
     }
   };
 
   const stopAlarmSound = () => {
     try {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.currentTime = 0;
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      if (oscRef.current) {
+        oscRef.current.stop();
+        oscRef.current.disconnect();
+        oscRef.current = null;
+      }
+      if (gainRef.current) {
+        gainRef.current.disconnect();
+        gainRef.current = null;
       }
     } catch (e) {}
   };
@@ -87,16 +123,12 @@ export const EmergencySafetyButton: React.FC<EmergencySafetyButtonProps> = ({
   };
 
   useEffect(() => {
-    // Preload /alarm.mp3
-    try {
-      const audio = new Audio('/alarm.mp3');
-      audio.loop = true;
-      audio.preload = 'auto';
-      audioRef.current = audio;
-    } catch (e) {}
-
     return () => {
       stopAlarmSound();
+      if (audioCtxRef.current) {
+        audioCtxRef.current.close().catch(() => {});
+        audioCtxRef.current = null;
+      }
     };
   }, []);
 

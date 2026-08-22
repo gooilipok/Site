@@ -2,6 +2,14 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 
+// Process-level crash prevention handlers
+process.on('uncaughtException', (err) => {
+  console.error('[Unhandled Exception]:', err?.message || err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[Unhandled Rejection]:', reason);
+});
+
 // Safely resolve directory path in both CJS and ESM environments
 const currentDir = typeof __dirname !== 'undefined'
   ? __dirname
@@ -2279,20 +2287,6 @@ async function startServer() {
       appType: 'spa'
     });
     app.use(vite.middlewares);
-
-    // SPA fallback in development mode
-    app.get('*', async (req: Request, res: Response, next) => {
-      if (req.originalUrl.startsWith('/api')) return next();
-      try {
-        const url = req.originalUrl;
-        let template = fs.readFileSync(path.join(process.cwd(), 'index.html'), 'utf-8');
-        template = await vite.transformIndexHtml(url, template);
-        res.status(200).set({ 'Content-Type': 'text/html' }).end(template);
-      } catch (e: any) {
-        vite.ssrFixStacktrace(e as Error);
-        next(e);
-      }
-    });
   } else {
     // Production mode: Serve dist built SPA
     const distPath = path.join(process.cwd(), 'dist');
@@ -2305,10 +2299,9 @@ async function startServer() {
       if (req.originalUrl.startsWith('/api')) return next();
       const distIndex = path.join(distPath, 'index.html');
       if (fs.existsSync(distIndex)) {
-        res.sendFile(distIndex);
-      } else {
-        res.sendFile(path.join(process.cwd(), 'index.html'));
+        return res.sendFile(distIndex);
       }
+      return res.sendFile(path.join(process.cwd(), 'index.html'));
     });
   }
 

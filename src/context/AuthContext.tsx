@@ -37,13 +37,23 @@ const USER_KEY = 'bausquad_user_data';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(() => {
-    const saved = localStorage.getItem(USER_KEY);
-    return saved ? JSON.parse(saved) : null;
+    try {
+      const saved = localStorage.getItem(USER_KEY);
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      localStorage.removeItem(USER_KEY);
+      return null;
+    }
   });
 
   const [tokens, setTokens] = useState<AuthTokens | null>(() => {
-    const saved = localStorage.getItem(TOKEN_KEY);
-    return saved ? JSON.parse(saved) : null;
+    try {
+      const saved = localStorage.getItem(TOKEN_KEY);
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      localStorage.removeItem(TOKEN_KEY);
+      return null;
+    }
   });
 
   const [isLoading, setIsLoading] = useState<boolean>(true);

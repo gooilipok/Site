@@ -54,7 +54,9 @@ export const CncDroDisplay: React.FC<CncDroDisplayProps> = ({
   // Knob Y (5 steps): -80deg to +80deg
   const knobYAngle = -80 + (yIndex / (COMPLEXITIES.length - 1)) * 160;
 
-  const currentDeadline = DEADLINE_MATRIX[xIndex][yIndex];
+  const safeX = Math.max(0, Math.min(xIndex, WORK_TYPES.length - 1));
+  const safeY = Math.max(0, Math.min(yIndex, COMPLEXITIES.length - 1));
+  const currentDeadline = DEADLINE_MATRIX[safeX]?.[safeY] || '1–2 дня';
 
   const setX = (val: number) => {
     if (onChangeX) onChangeX(val);

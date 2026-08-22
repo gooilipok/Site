@@ -1,9 +1,7 @@
 import React, { useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { FileText, Shield, Lock, ShieldCheck, Printer, Copy, Check, ChevronRight, Home, Cog } from 'lucide-react';
-import { TermsPage } from './TermsPage';
-import { PrivacyPage } from './PrivacyPage';
-import { ConsentPage } from './ConsentPage';
+import { FileText, Lock, ShieldCheck, Home, ChevronRight, Cog } from 'lucide-react';
+import { LegalDocumentViewer } from '../components/LegalDocumentViewer';
 
 export const AgreementsPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -18,7 +16,7 @@ export const AgreementsPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#0f1418] text-[#ecf0f1] relative overflow-hidden py-8 px-4 sm:px-6">
+    <div className="min-h-screen bg-[#0f1418] text-[#ecf0f1] relative overflow-hidden py-6 px-4 sm:px-6">
       
       {/* ⚙️ BACKGROUND ROTATING GEARS */}
       <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden opacity-[0.03]">
@@ -27,7 +25,7 @@ export const AgreementsPage: React.FC = () => {
         <Cog className="absolute -bottom-24 left-1/4 w-[550px] h-[550px] text-[#f1c40f] animate-[spin_60s_linear_infinite]" />
       </div>
 
-      <div className="max-w-5xl mx-auto relative z-10 space-y-6">
+      <div className="max-w-5xl mx-auto relative z-10 space-y-4">
         
         {/* TOP NAVIGATION / BREADCRUMBS */}
         <div className="bg-[#1a252f] border-b-2 border-[#c5a059] p-4 shadow-xl flex flex-wrap items-center justify-between gap-4">
@@ -47,11 +45,11 @@ export const AgreementsPage: React.FC = () => {
         </div>
 
         {/* TABS SWITCHER */}
-        <div className="bg-[#1a252f] p-4 border border-[#2b3d4f] shadow-lg flex flex-wrap gap-2 items-center justify-between">
+        <div className="bg-[#1a252f] p-3 border border-[#2b3d4f] shadow-lg flex flex-wrap gap-2 items-center justify-between">
           <div className="flex flex-wrap gap-2">
             <button
               onClick={() => handleTabChange('terms')}
-              className={`px-4 py-2.5 text-xs font-bold uppercase transition-all flex items-center gap-2 ${
+              className={`px-4 py-2 text-xs font-bold uppercase transition-all flex items-center gap-2 ${
                 activeTab === 'terms'
                   ? 'bg-[#c5a059] text-black shadow-lg shadow-[#c5a059]/20 font-black'
                   : 'bg-[#0f1418] text-[#bdc3c7] hover:text-white border border-white/5'
@@ -63,9 +61,9 @@ export const AgreementsPage: React.FC = () => {
 
             <button
               onClick={() => handleTabChange('privacy')}
-              className={`px-4 py-2.5 text-xs font-bold uppercase transition-all flex items-center gap-2 ${
+              className={`px-4 py-2 text-xs font-bold uppercase transition-all flex items-center gap-2 ${
                 activeTab === 'privacy'
-                  ? 'bg-[#c5a059] text-black shadow-lg shadow-[#c5a059]/20 font-black'
+                  ? 'bg-[#3498db] text-white shadow-lg shadow-[#3498db]/20 font-black'
                   : 'bg-[#0f1418] text-[#bdc3c7] hover:text-white border border-white/5'
               }`}
             >
@@ -75,13 +73,13 @@ export const AgreementsPage: React.FC = () => {
 
             <button
               onClick={() => handleTabChange('consent')}
-              className={`px-4 py-2.5 text-xs font-bold uppercase transition-all flex items-center gap-2 ${
+              className={`px-4 py-2 text-xs font-bold uppercase transition-all flex items-center gap-2 ${
                 activeTab === 'consent'
-                  ? 'bg-[#c5a059] text-black shadow-lg shadow-[#c5a059]/20 font-black'
+                  ? 'bg-[#2ecc71] text-black shadow-lg shadow-[#2ecc71]/20 font-black'
                   : 'bg-[#0f1418] text-[#bdc3c7] hover:text-white border border-white/5'
               }`}
             >
-              <Shield className="w-4 h-4" />
+              <ShieldCheck className="w-4 h-4" />
               <span>Согласие на обработку ПД</span>
             </button>
           </div>
@@ -89,9 +87,7 @@ export const AgreementsPage: React.FC = () => {
 
         {/* ACTIVE DOCUMENT VIEW */}
         <div className="transition-all">
-          {activeTab === 'terms' && <TermsPage />}
-          {activeTab === 'privacy' && <PrivacyPage />}
-          {activeTab === 'consent' && <ConsentPage />}
+          <LegalDocumentViewer docType={activeTab} />
         </div>
       </div>
     </div>

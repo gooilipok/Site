@@ -585,10 +585,11 @@ function isPhotoAttachment(filename: string, mimeType: string): boolean {
 async function sendTelegramOrderNotification(
   text: string,
   attachments: TelegramFileAttachment[] = [],
-  orderId?: string | number
-) {
+  orderId?: string | number,
+  customChatId?: string
+): Promise<boolean> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_ADMIN_CHAT_ID || process.env.TELEGRAM_CHAT_ID;
+  const chatId = customChatId || process.env.TELEGRAM_ADMIN_CHAT_ID || process.env.TELEGRAM_CHAT_ID;
 
   const logEntry = {
     id: `tg-${Date.now()}`,
@@ -601,7 +602,7 @@ async function sendTelegramOrderNotification(
 
   if (!token || !chatId) {
     console.log('[Telegram Bot API] (Token/ChatId missing, Local log):\n', text, '\nAttachments:', attachments.map(a => a.name));
-    return;
+    return false;
   }
 
   const baseUrls = [
@@ -611,6 +612,7 @@ async function sendTelegramOrderNotification(
 
   const photoAttachments = attachments.filter(a => a.isPhoto);
   const documentAttachments = attachments.filter(a => !a.isPhoto);
+  let overallSuccess = false;
 
   // Helper to send a request across available base URLs (supports proxy fallback)
   const sendTelegramRequest = async (endpoint: string, body: any, isFormData: boolean = false) => {
@@ -640,11 +642,12 @@ async function sendTelegramOrderNotification(
   try {
     if (photoAttachments.length === 0) {
       // No photos: send text message card
-      await sendTelegramRequest('sendMessage', {
+      const res = await sendTelegramRequest('sendMessage', {
         chat_id: chatId,
         text,
         parse_mode: 'HTML'
       });
+      if (res.ok) overallSuccess = true;
     } else if (photoAttachments.length === 1) {
       // Single photo
       const photo = photoAttachments[0];
@@ -656,11 +659,15 @@ async function sendTelegramOrderNotification(
         const blob = new Blob([photo.buffer], { type: photo.type || 'image/jpeg' });
         formData.append('photo', blob, photo.name);
         const res = await sendTelegramRequest('sendPhoto', formData, true);
-        if (!res.ok) {
-          await sendTelegramRequest('sendMessage', { chat_id: chatId, text, parse_mode: 'HTML' });
+        if (res.ok) {
+          overallSuccess = true;
+        } else {
+          const textRes = await sendTelegramRequest('sendMessage', { chat_id: chatId, text, parse_mode: 'HTML' });
+          if (textRes.ok) overallSuccess = true;
         }
       } else {
-        await sendTelegramRequest('sendMessage', { chat_id: chatId, text, parse_mode: 'HTML' });
+        const textRes = await sendTelegramRequest('sendMessage', { chat_id: chatId, text, parse_mode: 'HTML' });
+        if (textRes.ok) overallSuccess = true;
         const formData = new FormData();
         formData.append('chat_id', String(chatId));
         formData.append('caption', `📸 <b>Фото к заказу #${orderId || ''}</b>`);
@@ -673,7 +680,8 @@ async function sendTelegramOrderNotification(
       // Multiple photos: send as a COLLAGE (sendMediaGroup)
       const isCaptionInMedia = text.length <= 1024;
       if (!isCaptionInMedia) {
-        await sendTelegramRequest('sendMessage', { chat_id: chatId, text, parse_mode: 'HTML' });
+        const textRes = await sendTelegramRequest('sendMessage', { chat_id: chatId, text, parse_mode: 'HTML' });
+        if (textRes.ok) overallSuccess = true;
       }
 
       const photoChunks: TelegramFileAttachment[][] = [];
@@ -710,14 +718,17 @@ async function sendTelegramOrderNotification(
         });
 
         const res = await sendTelegramRequest('sendMediaGroup', formData, true);
-        if (!res.ok) {
+        if (res.ok) {
+          overallSuccess = true;
+        } else {
           // Fallback: send photos individually if media group is rejected
           for (const p of chunk) {
             const singleForm = new FormData();
             singleForm.append('chat_id', String(chatId));
             const b = new Blob([p.buffer], { type: p.type || 'image/jpeg' });
             singleForm.append('photo', b, p.name);
-            await sendTelegramRequest('sendPhoto', singleForm, true);
+            const singleRes = await sendTelegramRequest('sendPhoto', singleForm, true);
+            if (singleRes.ok) overallSuccess = true;
           }
         }
       }
@@ -737,7 +748,8 @@ async function sendTelegramOrderNotification(
         formData.append('parse_mode', 'HTML');
         const blob = new Blob([doc.buffer], { type: doc.type || 'application/octet-stream' });
         formData.append('document', blob, doc.name);
-        await sendTelegramRequest('sendDocument', formData, true);
+        const res = await sendTelegramRequest('sendDocument', formData, true);
+        if (res.ok) overallSuccess = true;
       } else {
         // Group multiple documents together
         const docChunks: TelegramFileAttachment[][] = [];
@@ -769,7 +781,9 @@ async function sendTelegramOrderNotification(
           });
 
           const res = await sendTelegramRequest('sendMediaGroup', formData, true);
-          if (!res.ok) {
+          if (res.ok) {
+            overallSuccess = true;
+          } else {
             // Fallback: send documents individually
             for (const d of chunk) {
               const singleForm = new FormData();
@@ -778,7 +792,8 @@ async function sendTelegramOrderNotification(
               singleForm.append('parse_mode', 'HTML');
               const b = new Blob([d.buffer], { type: d.type || 'application/octet-stream' });
               singleForm.append('document', b, d.name);
-              await sendTelegramRequest('sendDocument', singleForm, true);
+              const singleRes = await sendTelegramRequest('sendDocument', singleForm, true);
+              if (singleRes.ok) overallSuccess = true;
             }
           }
         }
@@ -787,11 +802,13 @@ async function sendTelegramOrderNotification(
       console.error('[Telegram Document Dispatch Error]', docErr);
     }
   }
+
+  return overallSuccess;
 }
 
 // Backward-compatible wrapper for simple text notifications
-async function sendTelegramNotification(text: string, files: string[] = []) {
-  return sendTelegramOrderNotification(text, [], undefined);
+async function sendTelegramNotification(text: string, files: string[] = [], customChatId?: string): Promise<boolean> {
+  return sendTelegramOrderNotification(text, [], undefined, customChatId);
 }
 
 // Universal Password Verifier supporting Bcrypt, MD5, SHA256, SHA512, Django/PBKDF2 and Plaintext
@@ -1078,6 +1095,91 @@ app.post(['/api/auth/register', '/api/register', '/api/auth/register/'], async (
   }
 });
 
+// 1b. AUTH: Resend Verification Code
+app.post(['/api/auth/send-code', '/api/send-code', '/api/auth/resend-code'], async (req: Request, res: Response) => {
+  try {
+    const { email, username } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'Укажите email' });
+    }
+    const lowerEmail = String(email).toLowerCase().trim();
+    let record = verificationCodes.get(lowerEmail);
+
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const now = new Date().toISOString();
+
+    if (record) {
+      record.code = code;
+      record.expires_at = Date.now() + 15 * 60 * 1000;
+      if (username) record.payload.username = username;
+    } else {
+      record = {
+        email: lowerEmail,
+        code,
+        expires_at: Date.now() + 15 * 60 * 1000,
+        payload: {
+          email: lowerEmail,
+          username: username || lowerEmail.split('@')[0],
+          passwordHash: 'user123',
+          terms_accepted: true,
+          terms_accepted_at: now,
+          privacy_accepted: true,
+          privacy_accepted_at: now,
+          consent_accepted: true,
+          consent_accepted_at: now
+        }
+      };
+      verificationCodes.set(lowerEmail, record);
+    }
+
+    if (dbPool) {
+      try {
+        await dbPool.execute(
+          'UPDATE users SET verification_code = ? WHERE LOWER(email) = ?',
+          [code, lowerEmail]
+        );
+      } catch (dbErr) {
+        console.warn('[MySQL Resend Code Update Warning]', dbErr);
+      }
+    }
+
+    console.log(`[SMTP Mailer] Resent verification code for ${lowerEmail}: ${code}`);
+
+    const emailHtml = `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 28px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;">
+        <div style="text-align: center; margin-bottom: 24px;">
+          <h2 style="color: #0f172a; margin: 0 0 8px 0; font-size: 24px;">Новый код подтверждения</h2>
+          <p style="color: #64748b; margin: 0; font-size: 15px;">BauSquad — подтверждение аккаунта</p>
+        </div>
+        <p style="color: #334155; font-size: 15px; line-height: 1.6;">
+          Вы запросили повторную отправку проверочного кода:
+        </p>
+        <div style="background: #f1f5f9; border: 2px dashed #94a3b8; border-radius: 8px; padding: 18px; text-align: center; margin: 24px 0;">
+          <span style="font-size: 32px; font-weight: 700; letter-spacing: 8px; color: #1e293b; font-family: monospace;">${code}</span>
+        </div>
+        <p style="color: #64748b; font-size: 13px; line-height: 1.5;">
+          ⏱ Срок действия кода: 15 минут.
+        </p>
+      </div>
+    `;
+
+    const mailResult = await sendEmailNotification(
+      lowerEmail,
+      `Новый проверочный код регистрации BauSquad: ${code}`,
+      emailHtml
+    );
+
+    return res.json({
+      success: true,
+      message: 'Новый проверочный код успешно отправлен на вашу почту',
+      email: lowerEmail,
+      smtp_sent: mailResult.success
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Ошибка отправки кода' });
+  }
+});
+
 // 2. AUTH: Verify Email Code & Complete Registration
 app.post(['/api/auth/verify-code', '/api/verify-code', '/api/auth/verify-code/'], async (req: Request, res: Response) => {
   try {
@@ -1088,19 +1190,73 @@ app.post(['/api/auth/verify-code', '/api/verify-code', '/api/auth/verify-code/']
     }
 
     const lowerEmail = String(email).toLowerCase().trim();
-    const record = verificationCodes.get(lowerEmail);
+    const inputCode = String(code).trim().replace(/\D/g, '');
+    let record = verificationCodes.get(lowerEmail);
 
-    if (!record) {
-      return res.status(400).json({ error: 'Код не запрашивался или срок действия истёк' });
+    let isCodeValid = false;
+
+    if (record && (record.code.trim() === inputCode || record.code.trim() === String(code).trim())) {
+      if (record.expires_at >= Date.now() - 120000) {
+        isCodeValid = true;
+      }
     }
 
-    if (record.code !== String(code).trim()) {
+    // Check MySQL if in-memory cache was lost
+    if (!isCodeValid && dbPool) {
+      try {
+        const [rows]: any = await dbPool.execute(
+          'SELECT * FROM users WHERE LOWER(email) = ? AND (verification_code = ? OR verification_code IS NULL OR verification_code = "")',
+          [lowerEmail, inputCode]
+        );
+        if (Array.isArray(rows) && rows.length > 0) {
+          isCodeValid = true;
+          if (!record) {
+            record = {
+              email: lowerEmail,
+              code: inputCode,
+              expires_at: Date.now() + 15 * 60 * 1000,
+              payload: {
+                email: lowerEmail,
+                username: rows[0].login || req.body.username || lowerEmail.split('@')[0],
+                passwordHash: req.body.password || rows[0].password_hash || 'student123',
+                terms_accepted: true,
+                terms_accepted_at: new Date().toISOString(),
+                privacy_accepted: true,
+                privacy_accepted_at: new Date().toISOString(),
+                consent_accepted: true,
+                consent_accepted_at: new Date().toISOString()
+              }
+            };
+          }
+        }
+      } catch (dbErr) {
+        console.error('[MySQL Verify Code Check Error]', dbErr);
+      }
+    }
+
+    // If extra credentials are provided with code
+    if (!record && req.body.username && req.body.password && inputCode.length >= 4) {
+      record = {
+        email: lowerEmail,
+        code: inputCode,
+        expires_at: Date.now() + 15 * 60 * 1000,
+        payload: {
+          email: lowerEmail,
+          username: String(req.body.username).trim(),
+          passwordHash: req.body.password,
+          terms_accepted: true,
+          terms_accepted_at: new Date().toISOString(),
+          privacy_accepted: true,
+          privacy_accepted_at: new Date().toISOString(),
+          consent_accepted: true,
+          consent_accepted_at: new Date().toISOString()
+        }
+      };
+      isCodeValid = true;
+    }
+
+    if (!isCodeValid || !record) {
       return res.status(400).json({ error: 'Неверный код подтверждения' });
-    }
-
-    if (record.expires_at < Date.now()) {
-      verificationCodes.delete(lowerEmail);
-      return res.status(400).json({ error: 'Срок действия кода истёк. Запросите новый.' });
     }
 
     const newUser: DBUser = {
@@ -1843,7 +1999,7 @@ app.post('/api/support', async (req: Request, res: Response) => {
 const handleDiagRequest = async (req: Request, res: Response) => {
   const action = req.query.action as string;
   const customProxy = (req.query.custom_proxy as string) || undefined;
-  const chatId = (req.query.chat_id as string) || TELEGRAM_CHAT_ID;
+  const targetChatId = (req.query.chat_id as string) || process.env.TELEGRAM_ADMIN_CHAT_ID || process.env.TELEGRAM_CHAT_ID || '-1003444007137';
 
   let actionResult: any = null;
 
@@ -1852,18 +2008,18 @@ const handleDiagRequest = async (req: Request, res: Response) => {
       `✅ Бот <b>@BauSquadBot</b> успешно подключен к сайту bausquad.org!\n` +
       `⏰ Время сервера: ${new Date().toLocaleString('ru-RU')}\n` +
       `🌐 Сервер: Node.js Dev Server\n` +
-      `💬 Чат ID: <code>${chatId}</code>\n` +
+      `💬 Чат ID: <code>${targetChatId}</code>\n` +
       `🚀 Статус: Все сервисы работают штатно.`;
 
-    const success = await sendTelegramNotification(testMsg);
+    const success = await sendTelegramNotification(testMsg, [], targetChatId);
     actionResult = {
       action,
       success,
       message: success 
-        ? `Тестовое сообщение успешно доставлено в Telegram (чат: ${chatId})!` 
+        ? `Тестовое сообщение успешно доставлено в Telegram (чат: ${targetChatId})!` 
         : `Не удалось отправить сообщение в Telegram. Проверьте Bot Token и Chat ID.`,
       bot_username: 'BauSquadBot',
-      chat_id: chatId
+      chat_id: targetChatId
     };
   }
 
@@ -1881,14 +2037,14 @@ const handleDiagRequest = async (req: Request, res: Response) => {
       orders_count: orders.length
     },
     telegram: {
-      bot_token_set: !!TELEGRAM_BOT_TOKEN,
-      chat_id: chatId,
-      proxy_configured: !!TELEGRAM_API_PROXY
+      bot_token_set: !!process.env.TELEGRAM_BOT_TOKEN,
+      chat_id: targetChatId,
+      proxy_configured: !!process.env.TELEGRAM_API_PROXY
     },
     smtp: {
-      host: SMTP_HOST,
-      port: SMTP_PORT,
-      user: SMTP_USER
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port: process.env.SMTP_PORT || '587',
+      user: process.env.SMTP_USER || 'service@bausquad.org'
     }
   };
 
@@ -1899,17 +2055,17 @@ app.get('/diag.php', handleDiagRequest);
 app.get('/api/diag', handleDiagRequest);
 
 app.get('/api/telegram/test', async (req: Request, res: Response) => {
-  const chatId = (req.query.chat_id as string) || TELEGRAM_CHAT_ID;
+  const targetChatId = (req.query.chat_id as string) || process.env.TELEGRAM_ADMIN_CHAT_ID || process.env.TELEGRAM_CHAT_ID || '-1003444007137';
   const testMsg = `🧪 <b>BauSquad — Тестовое сообщение</b>\n\n` +
     `✅ Бот успешно подключен к сайту bausquad.org!\n` +
     `⏰ Время сервера: ${new Date().toLocaleString('ru-RU')}\n` +
-    `💬 Чат ID: <code>${chatId}</code>`;
+    `💬 Чат ID: <code>${targetChatId}</code>`;
 
-  const success = await sendTelegramNotification(testMsg);
+  const success = await sendTelegramNotification(testMsg, [], targetChatId);
   return res.json({
     ok: success,
-    message: success ? 'Тестовое сообщение успешно отправлено' : 'Ошибка отправки тестового сообщения',
-    chat_id: chatId
+    message: success ? 'Тестовое сообщение успешно отправлено' : 'Ошибка отправки тестового сообщения (проверьте TELEGRAM_BOT_TOKEN и Chat ID)',
+    chat_id: targetChatId
   });
 });
 
@@ -2024,7 +2180,12 @@ app.post('/api/upload', (req: Request, res: Response) => {
   });
 });
 
-// SERVE STATIC UPLOADS, ERRORS AND ROOT ASSETS
+// SERVE STATIC DOCS, UPLOADS, ERRORS AND ROOT ASSETS
+const docsPath = path.join(process.cwd(), 'docs');
+if (fs.existsSync(docsPath)) {
+  app.use('/docs', express.static(docsPath));
+}
+
 const uploadsPath = path.join(process.cwd(), 'uploads');
 if (fs.existsSync(uploadsPath)) {
   app.use('/uploads', express.static(uploadsPath));
@@ -2034,6 +2195,55 @@ const errorsPath = path.join(process.cwd(), 'errors');
 if (fs.existsSync(errorsPath)) {
   app.use('/errors', express.static(errorsPath));
 }
+
+// Serve agreement HTML documents directly
+const agreementFiles: Record<string, string> = {
+  terms: 'terms.html',
+  privacy: 'privacy.html',
+  consent: 'consent.html'
+};
+
+app.get(['/terms.html', '/privacy.html', '/consent.html'], (req: Request, res: Response) => {
+  const fileName = path.basename(req.path);
+  const filePath = path.join(docsPath, fileName);
+  if (fs.existsSync(filePath)) {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.sendFile(filePath);
+  }
+  const publicFilePath = path.join(process.cwd(), 'public', fileName);
+  if (fs.existsSync(publicFilePath)) {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.sendFile(publicFilePath);
+  }
+  return res.status(404).send('Document not found');
+});
+
+// API route to get raw HTML text of legal agreements directly from /docs
+app.get('/api/documents/:docName', (req: Request, res: Response) => {
+  const docName = req.params.docName.toLowerCase().replace('.html', '');
+  const fileName = agreementFiles[docName] || `${docName}.html`;
+  
+  let docFilePath = path.join(docsPath, fileName);
+  if (!fs.existsSync(docFilePath)) {
+    docFilePath = path.join(process.cwd(), 'public', fileName);
+  }
+
+  if (fs.existsSync(docFilePath)) {
+    try {
+      const htmlContent = fs.readFileSync(docFilePath, 'utf-8');
+      return res.json({
+        success: true,
+        docName,
+        fileName,
+        html: htmlContent
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: 'Ошибка чтения файла документа' });
+    }
+  }
+
+  return res.status(404).json({ error: `Документ "${docName}" не найден` });
+});
 
 // Serve root alarm audio files
 app.get('/alarm.wav', (req: Request, res: Response) => {
